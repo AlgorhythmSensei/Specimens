@@ -137,7 +137,6 @@ function render(packet) {
   const hh = String(Math.floor(liveTimeOfDay)).padStart(2, '0'); const mm = String(Math.floor(liveTimeOfDay % 1 * 60)).padStart(2, '0');
   document.querySelector('#population').textContent = packet.specimens.length; document.querySelector('#homeless').textContent = packet.specimens.filter(s => s.is_homeless).length; document.querySelector('#tick').textContent = packet.tick.toLocaleString(); document.querySelector('#clock').textContent = `${dayName}  ${hh}:${mm}`; document.querySelector('#phase').textContent = liveTimeOfDay >= 6 && liveTimeOfDay < 18 ? 'DAYLIGHT' : 'NIGHT';
   document.querySelector('#weather').textContent = (packet.weather || 'clear').toUpperCase();
-  if (packet.llm_commentary) { document.querySelector('#ai-commentary').textContent = packet.llm_commentary; document.querySelector('#ai-status').textContent = 'LIVE'; }
   document.querySelector('#simulation-label').textContent = `TEST SIMULATION #${packet.simulation_number} · Day ${simDay}`;
   const events = document.querySelector('#events'); const notable = packet.specimens.filter(s => ['teleported', 'copulating', 'gave_birth', 'became_father', 'caught_stealing', 'caught_deer', 'fighting', 'being_attacked', 'killed_bear', 'fighting_bear', 'fleeing_to_safety', 'watching_fight', 'sneaking_to_partner', 'with_partner', 'attacked_by_mad_bear'].includes(s.action)).slice(0, 6); events.innerHTML = notable.length ? notable.map(s => `<div class="event"><b>${s.name || '#' + s.id}</b> ${s.action.replace(/_/g,' ')}</div>`).join('') : '<div class="event">Population moving through the field.</div>';
   const analysis = document.querySelector('#analysis-list'); analysis.innerHTML = (packet.behavior_analysis || []).map(item => `<button class="analysis-item" data-specimen-id="${item.id}"><b>${item.name}</b><span>${item.action} · ${item.points} pts</span><p>${item.reason}</p></button>`).join('');
@@ -228,10 +227,8 @@ function updateAgentCards(packet) {
   selectedCard.setAttribute('aria-hidden', String(!selected && !selectedAnimal));
   if (selected) {
     const analysis = packet.behavior_analysis?.find(item => item.id === selected.id);
-    const thought = packet.llm_thoughts?.[selected.id];
-    const llmRow = thought ? `<div class="analysis-detail"><span>${selected.gender === 'man' ? '🟠 GROQ' : '🔵 GEMINI'}</span><strong>${thought}</strong></div>` : '';
     document.querySelector('#selected-name').textContent = `${selected.name} #${selected.id}`;
-    document.querySelector('#selected-vitals').innerHTML = `${vitalsMarkup(selected)}${analysis ? `<div class="analysis-detail"><span>WHY</span><strong>${analysis.reason}</strong></div>` : ''}${llmRow}`;
+    document.querySelector('#selected-vitals').innerHTML = `${vitalsMarkup(selected)}${analysis ? `<div class="analysis-detail"><span>WHY</span><strong>${analysis.reason}</strong></div>` : ''}`;
     document.querySelector('.card-kicker').textContent = 'SPECIMEN VITALS';
   } else if (selectedAnimal) {
     document.querySelector('#selected-name').textContent = `${selectedAnimal.species.toUpperCase()} #${selectedAnimal.id}`;
@@ -322,6 +319,50 @@ document.querySelector('#add-form').addEventListener('submit', event => {
   window.simSocket?.send(JSON.stringify({ type: 'add_specimen', values }));
   document.querySelector('#add-dialog').close();
 });
+document.querySelector('#field-notes-btn').onclick = async () => {
+  const btn = document.querySelector('#field-notes-btn');
+  const commentaryEl = document.querySelector('#ai-commentary');
+  const statusEl = document.querySelector('#ai-status');
+  btn.disabled = true;
+  btn.textContent = 'Observing…';
+  commentaryEl.textContent = 'Calling Groq…';
+  statusEl.textContent = '…';
+  try {
+    const res = await fetch('/api/field-notes', { method: 'POST' });
+    const data = await res.json();
+    commentaryEl.textContent = data.commentary || 'No observation returned.';
+    statusEl.textContent = 'GROQ';
+  } catch (e) {
+    commentaryEl.textContent = 'Failed: ' + e.message;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Field Notes';
+  }
+};
+
+document.querySelector('#read-minds-btn').onclick = async () => {
+  const dialog = document.querySelector('#read-minds-dialog');
+  const contentEl = document.querySelector('#read-minds-content');
+  contentEl.textContent = 'Connecting to Gemini…';
+  dialog.showModal();
+  try {
+    const res = await fetch('/api/read-minds', { method: 'POST' });
+    const data = await res.json();
+    const thoughts = data.thoughts || {};
+    const entries = Object.values(thoughts);
+    if (!entries.length) {
+      contentEl.textContent = 'No thoughts returned — population may be too idle.';
+    } else {
+      contentEl.innerHTML = entries.map(t =>
+        `<div class="mind-entry"><div class="mind-header"><b>${t.name}</b><span>${t.action.replace(/_/g,' ')}</span></div><p class="mind-thought">"${t.thought}"</p></div>`
+      ).join('');
+    }
+  } catch (e) {
+    contentEl.textContent = 'Failed: ' + e.message;
+  }
+};
+document.querySelector('#close-read-minds').onclick = () => document.querySelector('#read-minds-dialog').close();
+
 document.querySelector('#analyse-btn').onclick = async () => {
   const dialog = document.querySelector('#analyse-dialog');
   const statsEl = document.querySelector('#analyse-stats');
