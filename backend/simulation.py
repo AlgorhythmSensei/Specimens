@@ -119,7 +119,7 @@ class Simulation:
         self.tick += 1
         self._update_weather(seconds)
         self.world.update_pop_up(seconds)
-        self.world.grow_plants(seconds, self.weather)
+        self.world.grow_plants(seconds, self.weather, reclaiming=self.reclamation_active)
         self.world.move_animals(seconds)
         for resource in list(self.world.resources.values()):
             if resource.kind == "animal":

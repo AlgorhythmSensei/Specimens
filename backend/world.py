@@ -146,7 +146,7 @@ class World:
             self.resources[self._next_resource_id] = ForestResource(self._next_resource_id, "plant", position, 18, poisonous=random.random() < 0.2)
             self._next_resource_id += 1
 
-    def grow_plants(self, seconds: float, weather: str = "clear") -> None:
+    def grow_plants(self, seconds: float, weather: str = "clear", reclaiming: bool = False) -> None:
         weather_multipliers = {"clear": 1.0, "rain": 1.4, "drought": 0.5, "storm": 1.8}
         spawn_multipliers = {"clear": 1.0, "rain": 1.4, "drought": 0.5, "storm": 1.8}
         growth_multiplier = weather_multipliers.get(weather, 1.0)
@@ -156,15 +156,27 @@ class World:
             if resource.kind == "plant":
                 resource.energy = min(resource.max_energy, resource.energy + seconds * resource.growth_rate * growth_multiplier)
         plant_count = sum(1 for r in self.resources.values() if r.kind == "plant")
-        if plant_count < 60:
-            if plant_count < 40:
-                spawn_rate = seconds * 0.6 * spawn_multiplier
+        # During reclamation, target 80% of forest area (1 plant per ~12.5 sq units)
+        forest_area = forest.width * forest.height
+        reclamation_cap = int(forest_area * 0.80 / 12.5) if reclaiming else 60
+        cap = max(60, reclamation_cap) if reclaiming else 60
+        if plant_count < cap:
+            if reclaiming:
+                # Burst-spawn many plants per tick to fill the forest quickly
+                burst = max(1, int((cap - plant_count) * 0.08))
+                for _ in range(burst):
+                    position = (random.uniform(forest.x + 5, forest.x + forest.width - 5), random.uniform(forest.y + 5, forest.y + forest.height - 5))
+                    self.resources[self._next_resource_id] = ForestResource(self._next_resource_id, "plant", position, 18, poisonous=random.random() < 0.15)
+                    self._next_resource_id += 1
             else:
-                spawn_rate = seconds * 0.12 * spawn_multiplier
-            if random.random() < spawn_rate:
-                position = (random.uniform(forest.x + 5, forest.x + forest.width - 5), random.uniform(forest.y + 5, forest.y + forest.height - 5))
-                self.resources[self._next_resource_id] = ForestResource(self._next_resource_id, "plant", position, 18, poisonous=random.random() < 0.2)
-                self._next_resource_id += 1
+                if plant_count < 40:
+                    spawn_rate = seconds * 0.6 * spawn_multiplier
+                else:
+                    spawn_rate = seconds * 0.12 * spawn_multiplier
+                if random.random() < spawn_rate:
+                    position = (random.uniform(forest.x + 5, forest.x + forest.width - 5), random.uniform(forest.y + 5, forest.y + forest.height - 5))
+                    self.resources[self._next_resource_id] = ForestResource(self._next_resource_id, "plant", position, 18, poisonous=random.random() < 0.2)
+                    self._next_resource_id += 1
 
     def move_animals(self, seconds: float = 0.1) -> None:
         forest = next(zone for zone in self.zones if zone.name == "forest")
