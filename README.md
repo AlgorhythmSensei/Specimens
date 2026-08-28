@@ -1,6 +1,6 @@
 # Specimens
 
-Specimens is a browser-based evolutionary world. Autonomous human agents move through a shared world, make utility-based decisions, form relationships, hold jobs, earn and spend money, find housing, gather food, copulate, become pregnant, give birth, fight, run, get drunk, and die. Bears, deer, and plants form a living forest ecology. A roaming teleporter and a daily social event add unpredictable interactions.
+Specimens is a browser-based evolutionary world. Autonomous human agents move through a shared world, make utility-based decisions, form relationships, hold jobs, earn and spend money, find housing, gather food, copulate, become pregnant, give birth, fight, flee to safety, get drunk, watch fights, seek partners, and die. Bears, deer, and plants form a living forest ecology. A roaming teleporter and a daily social event add unpredictable interactions.
 
 The project is intentionally local-first. The live behavior analysis is generated from simulation state and uses **zero LLM tokens**.
 
@@ -16,14 +16,14 @@ uvicorn backend.websocket_server:app --reload
 
 Open `http://127.0.0.1:8000`. If that port is busy, add `--port 8003`.
 
-The server runs the simulation at 10 ticks per second. One simulated 24-hour day takes 10 real minutes:
+The server runs the simulation at 10 ticks per second. One simulated 24-hour day takes 10 real minutes at 1× speed:
 
 - 25 real seconds per simulated hour
 - 6:00–18:00 is daytime; 18:00–6:00 is nighttime
 - The browser clock shows `Day  HH:MM` and advances smoothly between server packets
 - One simulated week is 70 real minutes. Day 7 is Sunday.
 
-The **speed control** in the toolbar (0.5× – 20×) scales simulated time relative to real time without changing the tick rate. At 20× a full simulated day passes in 30 real seconds.
+The **speed slider** in the toolbar scales from **1× to 10,000×** — at 10,000× a full simulated day passes in about 0.1 real seconds.
 
 Run tests with:
 
@@ -63,9 +63,9 @@ Each specimen has:
 - **Reputation**: community standing (0–100); affected by conflict, theft, work, and donation
 - **Personality traits** (1–100): friendliness, curiosity, aggression, risk taking, loyalty, morality, pride, discipline, fearfulness, honesty, forgetfulness, religious
 - **Genetic traits** (1–100): eyesight, speed, defense, attack, fertility, mutation rate
-- **Job**: 90% of adults hold a job with a personal salary and a random shift (start 8–9 AM, end 4–6 PM)
+- **Job**: 90% of adults hold a job with a personal salary (±40% variation) and a random shift (start 8–9 AM, end 4–6 PM)
 - **Lifespan**: 120–300 simulated hours per specimen
-- **Run stamina**: 1 simulated hour of sprint capacity, recovering at 25%/hour when not running
+- **Run stamina**: 1 simulated hour of sprint capacity, recovering at 25%/hour while walking
 - **Intoxication**: builds up while socialising in the bar; causes zigzag movement for up to 3 simulated hours
 - **Pregnancy**: women carry for 9 simulated hours before giving birth
 
@@ -97,11 +97,12 @@ Every tick each awake specimen scores every action and executes the highest-valu
 | `reproduce` | night, compatible nearby partner (see Reproduction) |
 | `conflict` | aggression-driven; pursues target at run speed, fights on contact |
 | `flee` | bear in eyesight; sprints away; suppressed inside shelters |
-| `flee_human` | aggressive nearby stranger detected; fearful specimens run |
+| `flee_human` | actively fighting aggressor nearby with negative relationship — specimen runs to home or nearest building |
+| `spectate_fight` | nearby fight detected, curiosity > fearfulness — specimen walks toward it to watch |
 | `theft` | low wallet, low reputation, high aggression, rich target nearby |
 | `wander` | default fallback |
 
-**Priority overrides**: hunger > 90 adds +100 to eat. Night adds +60/+80 to sleep. Storm outdoors boosts return_home. Pregnant women strongly prefer return_home and avoid hunting and conflict.
+**Priority overrides**: hunger > 90 adds +100 to eat. Lunch hour (11:30–13:30) boosts eat by +55. Hunger > 50 always adds +35 to eat. Night adds +60/+80 to sleep. Storm outdoors boosts return_home. Pregnant women strongly prefer return_home and avoid hunting and conflict.
 
 ## Running And Stamina
 
@@ -114,23 +115,29 @@ Each specimen has **1 simulated hour of sprint stamina**:
 
 ## Reproduction And Pregnancy
 
-Copulation requires man + woman within 22 units, relationship ≥ 40 on both sides, hunger < 55, fatigue < 70, age ≥ 24 simulated hours, and a fertility dice roll:
+Copulation requires man + woman within 22 units, relationship ≥ 40 on both sides, hunger < 55, fatigue < 70, age ≥ 24 simulated hours, and a fertility dice roll. Men actively seek eligible women when they choose `reproduce`; women use `_interact` to attract a partner.
 
-- **Successful copulation**: both get +8 relationship; woman becomes **pregnant** for 9 simulated hours
+- **Successful copulation**: both get +8 relationship; woman becomes **pregnant** for 9 simulated hours; both display a **pulsing pink ♥ ring**
 - Pregnant women display a pulsing **pink ♥ ring** and strongly prefer returning home; they cannot hunt, fight, or copulate again until after birth
 - **Birth**: child spawns at the mother's position; mother takes a hunger and fatigue hit; father is notified; both parents earn points
 - If the father has died before birth the child still arrives, inheriting random paternal genetics
 - The child inherits a blend of both parents' personality and genetics, with mutation applied at the average of both mutation rates
 
+**Deer mating**: two deer meeting triggers reproduction (capped at 30 total). Both deer briefly show a **pink ♥ ring**. New fawns display a green halo for 1 simulated hour.
+
 ## Aggression And Fighting
 
-Specimens with **aggression > 65** are visible threats. Fearful or unaggressive specimens choose `flee_human` when one is within eyesight range, sprinting away.
+Specimens with **aggression > 65** who are actively fighting can trigger flee behavior in witnesses. A fearful specimen only flees when it has a negative relationship with the aggressor — strangers are not feared by default.
+
+When fleeing from a human threat, the specimen runs toward **home** or the **nearest building**, not randomly away — buildings provide safety.
 
 When two specimens fight on contact:
 
 - Damage = `(attacker.attack − defender.defense × 0.4) / 6` added to defender's hunger
 - If **both are aggressive** (>55): damage doubles and the defender has an 8% chance to retaliate immediately
 - Hunger ≥ 100 → death; recorded as `killed_in_fight`; killer loses 15 reputation points
+
+**Fight blinker**: a pulsing red/orange ring surrounds fighters and a `FIGHT` label appears at the conflict location on the canvas. Curious non-fearful specimens within 280 units are drawn toward the fight as spectators (`watching_fight`).
 
 ## Intoxication
 
@@ -164,7 +171,7 @@ Indoor zones (homes, café, bar, church, work, forest shelters) fully protect fr
 
 ### Plants
 
-Plants are green and rooted. Each has an individual growth rate (0.3–1.5 energy/sec). New plants sprout spontaneously up to a cap of 60. ~20% of plants are poisonous.
+Plants are green and rooted. Each has an individual growth rate (0.3–1.5 energy/sec). Population is kept at a minimum of 40 with aggressive respawning below that floor. New plants sprout up to a cap of 60. ~20% of plants are poisonous (red stalk).
 
 ### Deer
 
@@ -174,18 +181,25 @@ Deer are brown herbivores. They:
 - Seek plants when energy < 50%; avoid poisonous ones 95% of the time
 - Gravitate toward their herd (within 180 units) when unthreatened
 - Flee bears at 35–45 units/tick; flee humans at 6–12 units/tick
-- Reproduce when two deer meet (capped at 30); display a **green halo** for 1 sim-hour after birth
+- Reproduce when two deer meet (capped at 30); both display a **pink ♥ ring** briefly
 - Live 36–96 simulated hours; if all die, 5–10 new deer spawn immediately
 
 ### Bears
 
 Bears are large dark predators. They:
 
-- Walk at ~7 units/tick; sprint at 35–40 units/tick with a **10 sim-minute sprint limit** (recovers at 0.5× rate)
-- Hunt prey once every **8 simulated hours**; between hunts they wander or eat plants
-- **Sleep for 3 simulated hours** after successfully eating a deer or human
+- Walk at ~7 units/tick; sprint at 35–40 units/tick with a **10 sim-minute sprint limit** (recovers at 0.5× rate); stop sprinting when stamina drops to 10% and roam at walk speed until recovered
+- Only hunt prey when **energy is below 50%** (unless mad); between hunts they graze on plants or wander
+- Only eat a large meal (deer) once every **8 simulated hours**
+- **Sleep for 3 simulated hours** after successfully eating a deer
 - Roam the **entire 1000 × 1000 map** approximately 10% of their awake time (1–2 sim-hour wander periods); the rest of the time they stay in the forest
-- Become **mad for 30 simulated minutes** after eating a poisonous plant — attack anything within range
+- Become **mad for 30 simulated minutes** after eating a poisonous plant:
+  - Lock onto **one specific human target** (nearest human not inside a building)
+  - **Leave the forest** and chase the target across the entire map at sprint speed
+  - Buildings (homes, café, bar, church, work) provide full protection — the bear redirects to a new exposed target if their current target enters a building
+  - The **social event (pop_up) zone gives no protection** — a mad bear will charge directly into a social event
+  - Forest shelters also block the bear
+  - After successfully attacking the target the bear enters a **1 simulated hour circle walk** (radius 35, slowly circling the kill site)
 - Cannot enter forest shelters
 - Live 72–180 simulated hours; population is always topped up to at least 2
 
@@ -193,7 +207,7 @@ Bears are large dark predators. They:
 
 | Entity | Walk | Sprint | Limit |
 |---|---|---|---|
-| Bear | ~7 units/tick | 35–40 units/tick | 10 sim-min sprint |
+| Bear | ~7 units/tick | 35–40 units/tick | 10 sim-min sprint (stops at 10% stamina) |
 | Deer (bear threat) | ~7 units/tick | 35–45 units/tick | — |
 | Deer (human threat) | ~7 units/tick | 6–12 units/tick | — |
 | Human (flee/fight) | genetics-scaled | ~2× walk speed | 1 sim-hour stamina |
@@ -202,7 +216,7 @@ Bears are large dark predators. They:
 
 The glowing yellow orb drifts through the world. Before relocating it **grows to 5× its normal size** over 3 real seconds with intensifying glow, then snaps to a new random position.
 
-Specimens within 90 units are pulled toward it (quadratic falloff). Contact teleports the specimen to a random location anywhere in the world.
+Specimens within 90 units are pulled toward it (quadratic falloff). Contact teleports the specimen to a random location anywhere in the world. Trails are cleared on teleport to avoid crossing lines.
 
 ## Social Event
 
@@ -219,6 +233,8 @@ Topic and attracted trait by nearest zone:
 | Homes | Block party, neighbourhood cleanup | loyalty / friendliness |
 | Open | Astronomy club, lantern festival | curiosity / friendliness |
 
+**Note**: the social event zone offers no protection from mad bears. A bear chasing someone will follow them into an active event.
+
 ## Scoring
 
 Points accumulate through: hunting, gathering, selling goods, housing changes, reproduction, building shelters, donating, working, killing bears (group hunt), and sleep. The leaderboard shows the top five. Conflict deaths and theft cost points.
@@ -226,13 +242,17 @@ Points accumulate through: hunting, gathering, selling goods, housing changes, r
 ## UI Features
 
 - **Clock**: shows `Day  HH:MM` in the toolbar with the simulated day name (Mon–Sun)
-- **Speed control**: 0.5× / 1× / 2× / 5× / 10× / 20× buttons; active speed highlighted
+- **Speed slider**: drag lever from 1× to 10,000×; current multiplier shown beside the slider
 - **Pause**: turns the status dot red and shows `PAUSED`; resuming restores green `LIVE`
-- **Hover cards**: specimen quick stats, zone descriptions, animal energy/state, death markers
-- **Trail fade**: movement trails fade from invisible at the tail to full opacity at the head
+- **Hover cards**: specimen quick stats (7-second auto-dismiss), zone descriptions, animal energy/state, death markers; click animal to open vitals panel
+- **Selected vitals panel**: click any specimen or animal to pin their stats; shows name, hunger, fatigue, wallet, status, action, reputation, and behavior reasoning
+- **Trail fade**: movement trails fade from invisible at the tail to full opacity at the head; cleared on teleport
 - **New arrival**: manually added specimens and newborns pulse a bright yellow `NEW` ring for 2 simulated hours; initial population and resets do not blink
-- **Pregnant**: pulsing pink ♥ ring
-- **Weather overlay**: rain draws diagonal streaks; drought adds an amber tint
+- **Pregnant**: pulsing pink ♥ ring around the woman
+- **Copulating**: pulsing pink ♥ ring around both participants (human and animal)
+- **Fighting**: pulsing red ring around fighters; pulsing orange ring on the target; `FIGHT` label drawn at the conflict location; spectators drift in
+- **Mad bear**: `MAD` label; bear roams full map outside forest
+- **Weather overlay**: rain draws diagonal streaks; drought adds an amber tint; storm intensifies rain streaks
 - **Simulation label**: `TEST SIMULATION #N · Day D`; resets increment the number
 
 ## Add Specimen
@@ -259,34 +279,34 @@ JSON commands:
 ```json
 {"type": "add_specimen", "values": {"gender": "woman", "housed": false, "speed": 80}}
 {"type": "wake_specimen", "id": 7}
-{"type": "set_speed", "speed": 5}
+{"type": "set_speed", "speed": 100}
 ```
 
-Broadcast packet includes: `tick`, `simulation_number`, `time_scale`, `time_of_day`, `is_daytime`, `weather`, `day_number`, `event_active`, `event_topic`, specimens, leaderboard, behavior analysis, animals, plants, teleporter (with `grow_phase`), and zone geometry. Each specimen packet includes identity, position, needs, housing, action, inventory, points, `new_arrival`, `sleeping`, `pregnant`, `is_running`, `run_stamina`, `intoxicated`, and `reputation`.
+Broadcast packet includes: `tick`, `simulation_number`, `time_scale`, `time_of_day`, `is_daytime`, `weather`, `day_number`, `event_active`, `event_topic`, `fight_locations`, specimens, leaderboard, behavior analysis, animals, plants, teleporter (with `grow_phase`), and zone geometry. Each specimen packet includes identity, position, needs, housing, action, inventory, points, `new_arrival`, `sleeping`, `pregnant`, `is_running`, `run_stamina`, `intoxicated`, and `reputation`. Each animal packet includes species, position, energy, `sleeping`, `mad`, `new_arrival`, and `mating`.
 
 ## Project Structure
 
 ```text
 backend/
-    behavior.py          utility scoring, action execution, conflict, intoxication, flee
-    death.py             death conditions (starvation, old age, bear attack, fight)
+    behavior.py          utility scoring, action execution, conflict, flee-to-safety, spectators
+    death.py             death conditions (starvation, old age, mad bear, fight, night exposure)
     genetics.py          inherited genetic traits and mutation
     names.py             200-name pool
     personality.py       personality traits, inheritance, mutation (incl. religious)
-    reproduction.py      copulation, pregnancy, birth
-    simulation.py        clock, tick loop, economy, ecology, weather, scoring, packets
+    reproduction.py      copulation (man+woman only), pregnancy, birth, inheritance
+    simulation.py        clock, tick loop, economy, ecology, weather, bear AI, scoring, packets
     specimen.py          specimen state and serialization
     teleporter.py        roaming orb, suction, grow-before-relocate
     websocket_server.py  FastAPI HTTP/WebSocket server
-    world.py             zones, apartments, plants, animals, social event scheduling
+    world.py             zones, apartments, forest resources, animal AI state, social event
 
 frontend/
-    index.html           observatory layout, toolbar, speed control, add-specimen form
-    main.js              Canvas rendering, interpolation, trails, hover, focus
+    index.html           observatory layout, toolbar, speed slider, add-specimen form
+    main.js              Canvas rendering, interpolation, trails, hover, fight blinkers, hearts
     style.css            observatory styling and responsive layout
 
 tests/
-    test_simulation.py   simulation, ecology, economy, and behavior tests
+    test_simulation.py   23 tests covering simulation, ecology, economy, and behavior
 ```
 
 ## Local Start
