@@ -201,17 +201,19 @@ class BehaviorEngine:
             destination = next(zone for zone in simulation.world.zones if zone.name == "forest")
             self._move_toward(specimen, (destination.x + destination.width / 2, destination.y + destination.height / 2), simulation, 5.0 * weather_speed)
         elif action == "reproduce":
-            if specimen.gender == "woman":
-                self._interact(specimen, simulation)
+            opposite = "man" if specimen.gender == "woman" else "woman"
+            partners = [s for s in simulation.specimens.values()
+                        if s.id != specimen.id and s.gender == opposite and not s.pregnant
+                        and s.hunger <= 55 and s.age_hours >= 24
+                        and specimen.relationship_with(s.id) >= 20]
+            if partners:
+                target = min(partners, key=lambda p: math.dist(p.position, specimen.position))
+                # Sneak to the partner's home if they have one, otherwise go to them directly
+                destination = target.home if target.home else target.position
+                self._move_toward(specimen, destination, simulation, 4.5 * weather_speed)
+                specimen.current_action = "sneaking_to_partner" if math.dist(specimen.position, destination) > 30 else "with_partner"
             else:
-                women = [s for s in simulation.specimens.values()
-                         if s.id != specimen.id and s.gender == "woman" and not s.pregnant
-                         and s.hunger <= 55 and s.age_hours >= 24
-                         and specimen.relationship_with(s.id) >= 30]
-                if women:
-                    target = min(women, key=lambda w: math.dist(w.position, specimen.position))
-                    self._move_toward(specimen, target.position, simulation, 4.0 * weather_speed)
-                    specimen.current_action = "seeking_partner"
+                self._interact(specimen, simulation)
         elif action == "conflict":
             self._execute_conflict(specimen, simulation, weather_speed)
         elif action == "socialize":
