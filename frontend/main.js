@@ -88,7 +88,8 @@ function interpolatedPacket() {
 }
 
 function render(packet) {
-  const liveTimeOfDay = (packet.time_of_day + (performance.now() - packetReceivedAt) / 25000) % 24;
+  const timeInterp = packet.running !== false ? (performance.now() - packetReceivedAt) * (packet.time_scale || 1) / 25000 : 0;
+  const liveTimeOfDay = (packet.time_of_day + timeInterp) % 24;
   ctx.clearRect(0, 0, 1000, 1000);
   ctx.fillStyle = '#dce2d5'; ctx.fillRect(0, 0, 1000, 1000);
   if (packet.weather === 'rain' || packet.weather === 'storm') {
@@ -136,6 +137,7 @@ function render(packet) {
   const hh = String(Math.floor(liveTimeOfDay)).padStart(2, '0'); const mm = String(Math.floor(liveTimeOfDay % 1 * 60)).padStart(2, '0');
   document.querySelector('#population').textContent = packet.specimens.length; document.querySelector('#homeless').textContent = packet.specimens.filter(s => s.is_homeless).length; document.querySelector('#tick').textContent = packet.tick.toLocaleString(); document.querySelector('#clock').textContent = `${dayName}  ${hh}:${mm}`; document.querySelector('#phase').textContent = liveTimeOfDay >= 6 && liveTimeOfDay < 18 ? 'DAYLIGHT' : 'NIGHT';
   document.querySelector('#weather').textContent = (packet.weather || 'clear').toUpperCase();
+  if (packet.llm_commentary) { document.querySelector('#ai-commentary').textContent = packet.llm_commentary; document.querySelector('#ai-status').textContent = 'LIVE'; }
   document.querySelector('#simulation-label').textContent = `TEST SIMULATION #${packet.simulation_number} · Day ${simDay}`;
   const events = document.querySelector('#events'); const notable = packet.specimens.filter(s => ['teleported', 'copulating', 'gave_birth', 'became_father', 'caught_stealing', 'caught_deer', 'fighting', 'being_attacked', 'killed_bear', 'fighting_bear', 'fleeing_to_safety', 'watching_fight', 'sneaking_to_partner', 'with_partner', 'attacked_by_mad_bear'].includes(s.action)).slice(0, 6); events.innerHTML = notable.length ? notable.map(s => `<div class="event"><b>${s.name || '#' + s.id}</b> ${s.action.replace(/_/g,' ')}</div>`).join('') : '<div class="event">Population moving through the field.</div>';
   const analysis = document.querySelector('#analysis-list'); analysis.innerHTML = (packet.behavior_analysis || []).map(item => `<button class="analysis-item" data-specimen-id="${item.id}"><b>${item.name}</b><span>${item.action} · ${item.points} pts</span><p>${item.reason}</p></button>`).join('');
@@ -226,8 +228,10 @@ function updateAgentCards(packet) {
   selectedCard.setAttribute('aria-hidden', String(!selected && !selectedAnimal));
   if (selected) {
     const analysis = packet.behavior_analysis?.find(item => item.id === selected.id);
+    const thought = packet.llm_thoughts?.[selected.id];
+    const llmRow = thought ? `<div class="analysis-detail"><span>${selected.gender === 'man' ? '🟠 GROQ' : '🔵 GEMINI'}</span><strong>${thought}</strong></div>` : '';
     document.querySelector('#selected-name').textContent = `${selected.name} #${selected.id}`;
-    document.querySelector('#selected-vitals').innerHTML = `${vitalsMarkup(selected)}${analysis ? `<div class="analysis-detail"><span>WHY</span><strong>${analysis.reason}</strong></div>` : ''}`;
+    document.querySelector('#selected-vitals').innerHTML = `${vitalsMarkup(selected)}${analysis ? `<div class="analysis-detail"><span>WHY</span><strong>${analysis.reason}</strong></div>` : ''}${llmRow}`;
     document.querySelector('.card-kicker').textContent = 'SPECIMEN VITALS';
   } else if (selectedAnimal) {
     document.querySelector('#selected-name').textContent = `${selectedAnimal.species.toUpperCase()} #${selectedAnimal.id}`;
@@ -291,7 +295,15 @@ document.querySelector('#pause').onclick = event => {
     statusEl.classList.remove('connected');
   }
 };
-document.querySelector('#reset').onclick = () => window.simSocket?.send('reset');
+document.querySelector('#reset').onclick = () => {
+  window.simSocket?.send('reset');
+  state.running = true;
+  document.querySelector('#pause').textContent = 'Pause simulation';
+  const dot = document.querySelector('#connection-dot');
+  dot.style.background = '';
+  document.querySelector('#connection').textContent = 'LIVE';
+  document.querySelector('.status').classList.add('connected');
+};
 const speedSlider = document.querySelector('#speed-slider');
 const speedDisplay = document.querySelector('#speed-display');
 speedSlider.addEventListener('input', () => {
@@ -310,5 +322,60 @@ document.querySelector('#add-form').addEventListener('submit', event => {
   window.simSocket?.send(JSON.stringify({ type: 'add_specimen', values }));
   document.querySelector('#add-dialog').close();
 });
+document.querySelector('#analyse-btn').onclick = async () => {
+  const dialog = document.querySelector('#analyse-dialog');
+  const statsEl = document.querySelector('#analyse-stats');
+  const textEl = document.querySelector('#analyse-text');
+  statsEl.innerHTML = '';
+  textEl.textContent = 'Running LLM analysis…';
+  dialog.showModal();
+  try {
+    const res = await fetch('/api/analyse', { method: 'POST' });
+    const data = await res.json();
+    const s = data.stats || {};
+    statsEl.innerHTML = `
+      <div class="stat-row"><span>Population</span><strong>${s.population ?? '--'}</strong></div>
+      <div class="stat-row"><span>Homeless</span><strong>${s.homeless ?? '--'}</strong></div>
+      <div class="stat-row"><span>Avg Hunger</span><strong>${s.avg_hunger ?? '--'}%</strong></div>
+      <div class="stat-row"><span>Avg Wallet</span><strong>$${s.avg_wallet ?? '--'}</strong></div>
+      <div class="stat-row full"><span>Top Actions</span><strong>${(s.top_actions || []).map(([a,n]) => `${a}:${n}`).join(' · ')}</strong></div>
+    `;
+    textEl.textContent = data.analysis || 'No analysis returned.';
+  } catch (e) {
+    textEl.textContent = 'Analysis failed: ' + e.message;
+  }
+};
+document.querySelector('#close-analyse').onclick = () => document.querySelector('#analyse-dialog').close();
+
+document.querySelector('#optimise-btn').onclick = async () => {
+  const dialog = document.querySelector('#optimise-dialog');
+  const problemsEl = document.querySelector('#optimise-problems');
+  const traitsEl = document.querySelector('#optimise-traits');
+  problemsEl.textContent = 'Groq analysing problems… Gemini prescribing traits…';
+  traitsEl.innerHTML = '';
+  dialog.showModal();
+  try {
+    const res = await fetch('/api/optimise', { method: 'POST' });
+    const data = await res.json();
+    problemsEl.textContent = data.problems || 'No problems identified.';
+    const p = data.prescribed || {};
+    const traits = ['friendliness','curiosity','aggression','risk_taking','loyalty','morality','discipline','fearfulness','fertility','speed','eyesight','mutation_rate'];
+    if (p.man || p.woman) {
+      traitsEl.innerHTML = `
+        <div class="optimise-reasoning">${p.reasoning || ''}</div>
+        <table class="trait-table">
+          <thead><tr><th>Trait</th><th>Man</th><th>Woman</th></tr></thead>
+          <tbody>${traits.map(t => `<tr><td>${t}</td><td>${p.man?.[t] ?? '–'}</td><td>${p.woman?.[t] ?? '–'}</td></tr>`).join('')}</tbody>
+        </table>
+      `;
+    } else {
+      traitsEl.textContent = 'No trait prescription returned.';
+    }
+  } catch (e) {
+    problemsEl.textContent = 'Optimisation failed: ' + e.message;
+  }
+};
+document.querySelector('#close-optimise').onclick = () => document.querySelector('#optimise-dialog').close();
+
 fetch('/api/status').then(response => response.json()).then(draw); connect();
 animate();

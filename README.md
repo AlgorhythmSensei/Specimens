@@ -1,8 +1,8 @@
 # Specimens
 
-Specimens is a browser-based evolutionary world. Autonomous human agents move through a shared world, make utility-based decisions, form relationships, hold jobs, earn and spend money, find housing, gather food, copulate, become pregnant, give birth, fight, flee to safety, get drunk, watch fights, seek partners, and die. Bears, deer, and plants form a living forest ecology. A roaming teleporter and a daily social event add unpredictable interactions.
+Specimens is a browser-based evolutionary world. Autonomous human agents move through a shared world, make utility-based decisions, form relationships, hold jobs, earn and spend money, find housing, gather food, copulate (intoxicated people mate at 80% higher rate when home), become pregnant, give birth, fight, flee to safety, get drunk at the bar, watch fights, seek partners, and die. Bears, deer, and plants form a living forest ecology. A roaming teleporter and a daily social event add unpredictable interactions.
 
-The project is intentionally local-first. The live behavior analysis is generated from simulation state and uses **zero LLM tokens**.
+Two LLM providers observe the simulation in real time: **Gemini** (google-genai) generates inner thoughts for individual specimens; **Groq** narrates world-level events. An **Analyse** button triggers a deeper LLM behavioural report.
 
 ## Run
 
@@ -11,6 +11,7 @@ cd Specimens
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
+cp .env.example .env          # add your GROQ_API_KEY and GEMINI_API_KEY
 uvicorn backend.websocket_server:app --reload
 ```
 
@@ -20,7 +21,7 @@ The server runs the simulation at 10 ticks per second. One simulated 24-hour day
 
 - 25 real seconds per simulated hour
 - 6:00–18:00 is daytime; 18:00–6:00 is nighttime
-- The browser clock shows `Day  HH:MM` and advances smoothly between server packets
+- The browser clock shows `Day  HH:MM` and advances smoothly between server packets; it **freezes when paused**
 - One simulated week is 70 real minutes. Day 7 is Sunday.
 
 The **speed slider** in the toolbar scales from **1× to 10,000×** — at 10,000× a full simulated day passes in about 0.1 real seconds.
@@ -39,9 +40,9 @@ The world is 1000 × 1000 metres. Fixed zones:
 
 | Zone | Position | Purpose |
 |---|---|---|
-| Café | top-left | buy food, sell goods, buy or negotiate a home |
-| Bar | top-centre | socialise; extended stays cause intoxication |
-| Work | centre | earn salary during shift hours |
+| Café | top-left | buy food ($5/visit), sell goods, buy or negotiate a home |
+| Bar | top-centre | socialise (10am–4am only); each visit costs $10–20 and builds intoxication |
+| Work | centre | accumulate pay during shift hours; paid every 5th day |
 | Church | left | reflection and relationship building; Sunday attendance |
 | Forest | right strip (x 750–1000) | ecology, gathering, hunting, shelter building |
 | Homes | lower-centre | 20 apartments; residents rest and reproduce here |
@@ -50,23 +51,41 @@ The world is 1000 × 1000 metres. Fixed zones:
 
 Hovering over any zone shows a description. The social event hover shows the live topic.
 
+## Economy
+
+Each specimen starts with **$100**. Income and costs:
+
+| Activity | Amount |
+|---|---|
+| Starting wallet | $100 |
+| Work (accrues) | $10 per simulated day worked |
+| Payday | Every 5th simulated day — accrued pay is transferred to wallet in a lump sum |
+| Café meal | $5 per visit |
+| Bar visit | $10–20 per visit (random), bar open 10am–4am |
+| Selling plant goods | $5 per unit |
+| Selling animal goods | $12 per unit |
+| Buy home | $60 |
+| Sell home (desperate) | +$25, becomes homeless |
+| Theft (if caught) | $5–12 transferred; −12 reputation for thief |
+| Donation to homeless | $5 from donor to recipient |
+
 ## Specimens
 
 Each specimen has:
 
 - **Identity**: numeric id, name, gender, age
 - **Housing**: homeless status and apartment location when housed
-- **Needs**: hunger, fatigue, wallet
+- **Needs**: hunger, fatigue, wallet (starts $100), pay accrual
 - **Position**: live x/y coordinates and current action
 - **Inventory**: gathered plant goods and hunted animal goods
 - **Relationships**: per-specimen relationship score (−100 to +100)
 - **Reputation**: community standing (0–100); affected by conflict, theft, work, and donation
 - **Personality traits** (1–100): friendliness, curiosity, aggression, risk taking, loyalty, morality, pride, discipline, fearfulness, honesty, forgetfulness, religious
 - **Genetic traits** (1–100): eyesight, speed, defense, attack, fertility, mutation rate
-- **Job**: 90% of adults hold a job with a personal salary (±40% variation) and a random shift (start 8–9 AM, end 4–6 PM)
+- **Job**: 90% of adults hold a job; pay accrues at $10/sim-day while in the work zone; paid every 5th day
 - **Lifespan**: 120–300 simulated hours per specimen
 - **Run stamina**: 1 simulated hour of sprint capacity, recovering at 25%/hour while walking
-- **Intoxication**: builds up while socialising in the bar; causes zigzag movement for up to 3 simulated hours
+- **Intoxication**: builds up while socialising in the bar; causes zigzag movement; **intoxicated specimens at home have an 80% mating drive boost**
 - **Pregnancy**: women carry for 9 simulated hours before giving birth
 
 Names are drawn from a pool of 200 (100 masculine, 100 feminine). Newborn names are plain first names — parents are not encoded in the name.
@@ -77,12 +96,12 @@ Every tick each awake specimen scores every action and executes the highest-valu
 
 | Action | Triggered by |
 |---|---|
-| `eat` | high hunger; moves to café or eats in place |
+| `eat` | high hunger; moves to café ($5/meal) or eats in place |
 | `sleep` | high fatigue; boosted strongly after 22:00 |
-| `work` | has job, inside shift window, daytime |
+| `work` | has job, inside shift window, daytime; accrues $10/day |
 | `attend_church` | Sunday 7–8 AM, religious trait |
 | `attend_event` | social event active, matching personality trait |
-| `socialize` | friendliness; targets bar, church, or social event |
+| `socialize` | friendliness; targets bar (open 10am–4am, costs $10–20), church, or social event |
 | `donate` | high morality + wallet, homeless recipient nearby |
 | `gather` | in forest, collects plants |
 | `hunt` | in forest, speed ≥ 60, fatigue ≤ 70 |
@@ -94,7 +113,7 @@ Every tick each awake specimen scores every action and executes the highest-valu
 | `move_in` | homeless, nearby housed relationship with good reputation |
 | `sell_home` | housed but financially desperate |
 | `explore` | curiosity; moves toward forest |
-| `reproduce` | night, compatible nearby partner (see Reproduction) |
+| `reproduce` | night OR intoxicated at home; compatible nearby partner (see Reproduction) |
 | `conflict` | aggression-driven; pursues target at run speed, fights on contact |
 | `flee` | bear in eyesight; sprints away; suppressed inside shelters |
 | `flee_human` | actively fighting aggressor nearby with negative relationship — specimen runs to home or nearest building |
@@ -115,8 +134,10 @@ Each specimen has **1 simulated hour of sprint stamina**:
 
 ## Reproduction And Pregnancy
 
-Copulation requires man + woman within 22 units, relationship ≥ 40 on both sides, hunger < 55, fatigue < 70, age ≥ 24 simulated hours, and a fertility dice roll. Men actively seek eligible women when they choose `reproduce`; women use `_interact` to attract a partner.
+Copulation requires man + woman within 22 units, relationship ≥ 25 on both sides, hunger < 55, fatigue < 70, age ≥ 24 simulated hours, and a fertility dice roll. Men actively seek eligible women when they choose `reproduce`; women use `_interact` to attract a partner. Men sneak toward the partner's home at night.
 
+- **Intoxicated at home**: +80 reproduction utility — intoxicated specimens are highly likely to mate when they reach home regardless of time of day
+- **Nighttime**: baseline reproduction utility for all housed specimens
 - **Successful copulation**: both get +8 relationship; woman becomes **pregnant** for 9 simulated hours; both display a **pulsing pink ♥ ring**
 - Pregnant women display a pulsing **pink ♥ ring** and strongly prefer returning home; they cannot hunt, fight, or copulate again until after birth
 - **Birth**: child spawns at the mother's position; mother takes a hunger and fatigue hit; father is notified; both parents earn points
@@ -141,10 +162,30 @@ When two specimens fight on contact:
 
 ## Intoxication
 
-Socialising inside the Bar zone builds intoxication up to 3 simulated hours. While intoxicated:
+Visiting the Bar zone (open 10am–4am) costs $10–20 per visit and builds intoxication up to 4 simulated hours. While intoxicated:
 
 - Movement has a sine-wave lateral wobble — the specimen visibly zigzags
+- **Mating drive**: intoxicated specimens in the homes zone get +80 reproduction utility (80% higher chance to mate)
 - Intoxication drains at 1 sim-hour per real hour; the specimen sobers up naturally
+
+## LLM Integration
+
+Two LLM providers observe the simulation:
+
+| Provider | Purpose |
+|---|---|
+| **Gemini** (`gemini-2.5-flash-lite`) | Per-specimen inner thoughts — a 12-word first-person thought for individual specimens every 20 seconds |
+| **Groq** (`openai/gpt-oss-20b`) | World-level commentary — one vivid sentence every 10 seconds; also powers the deep analysis report |
+
+LLM thoughts appear in the **AI Observer** panel (world commentary) and in the **selected vitals** panel when a specimen is clicked. Keys are set in `.env` — the simulation runs fully without them (LLM panels remain blank).
+
+### Analyse Button
+
+The **Analyse** button in the toolbar sends the current simulation snapshot to Groq (Gemini fallback) and returns a structured behavioural report with:
+- **Population stats**: count, homeless rate, avg hunger, avg wallet, top actions
+- **Population health**: 2-sentence assessment
+- **Dominant behaviours**: what the population is doing and why
+- **Emerging strains**: risks or interesting patterns
 
 ## Homelessness And Group Behaviour
 
@@ -212,6 +253,16 @@ Bears are large dark predators. They:
 | Deer (human threat) | ~7 units/tick | 6–12 units/tick | — |
 | Human (flee/fight) | genetics-scaled | ~2× walk speed | 1 sim-hour stamina |
 
+## Nature Reclamation
+
+When the human population reaches zero, the forest begins **expanding westward** at 100 units per simulated day. The forest zone grows from its eastern strip across the entire map. During reclamation:
+
+- Plants burst-spawn to fill 80% of the expanding forest area
+- The canvas shows a green overlay with reclamation percentage
+- If the forest covers 100% of the map the game ends: **NATURE WINS**
+
+Resetting the simulation stops reclamation and restores the original forest boundary.
+
 ## Teleporter
 
 The glowing yellow orb drifts through the world. Before relocating it **grows to 5× its normal size** over 3 real seconds with intensifying glow, then snaps to a new random position.
@@ -233,7 +284,7 @@ Topic and attracted trait by nearest zone:
 | Homes | Block party, neighbourhood cleanup | loyalty / friendliness |
 | Open | Astronomy club, lantern festival | curiosity / friendliness |
 
-**Note**: the social event zone offers no protection from mad bears. A bear chasing someone will follow them into an active event.
+**Note**: the social event zone offers no protection from mad bears.
 
 ## Scoring
 
@@ -241,11 +292,12 @@ Points accumulate through: hunting, gathering, selling goods, housing changes, r
 
 ## UI Features
 
-- **Clock**: shows `Day  HH:MM` in the toolbar with the simulated day name (Mon–Sun)
+- **Clock**: shows `Day  HH:MM` in the toolbar with the simulated day name (Mon–Sun); **freezes while paused**
 - **Speed slider**: drag lever from 1× to 10,000×; current multiplier shown beside the slider
 - **Pause**: turns the status dot red and shows `PAUSED`; resuming restores green `LIVE`
+- **Analyse**: opens a modal with live population stats and a Groq/Gemini LLM behavioural report
 - **Hover cards**: specimen quick stats (7-second auto-dismiss), zone descriptions, animal energy/state, death markers; click animal to open vitals panel
-- **Selected vitals panel**: click any specimen or animal to pin their stats; shows name, hunger, fatigue, wallet, status, action, reputation, and behavior reasoning
+- **Selected vitals panel**: click any specimen or animal to pin their stats; shows name, hunger, fatigue, wallet, status, action, reputation, behavior reasoning, and **LLM inner thought**
 - **Trail fade**: movement trails fade from invisible at the tail to full opacity at the head; cleared on teleport
 - **New arrival**: manually added specimens and newborns pulse a bright yellow `NEW` ring for 2 simulated hours; initial population and resets do not blink
 - **Pregnant**: pulsing pink ♥ ring around the woman
@@ -254,10 +306,12 @@ Points accumulate through: hunting, gathering, selling goods, housing changes, r
 - **Mad bear**: `MAD` label; bear roams full map outside forest
 - **Weather overlay**: rain draws diagonal streaks; drought adds an amber tint; storm intensifies rain streaks
 - **Simulation label**: `TEST SIMULATION #N · Day D`; resets increment the number
+- **Reclamation overlay**: green tint with `NATURE RECLAIMS – X%` when population is zero
+- **Game over screen**: full green `NATURE WINS` overlay
 
 ## Add Specimen
 
-The **Add specimen** button opens a form with gender, housing preference, hunger, fatigue, friendliness, curiosity, aggression, speed, fertility, and mutation-rate sliders. The browser sends values to the server over WebSocket; the server assigns the next id, name, and apartment if available.
+The **Add specimen** button opens a form with gender, housing preference, hunger, fatigue, friendliness, curiosity, aggression, speed, fertility, and mutation-rate sliders.
 
 ## API And WebSocket Protocol
 
@@ -265,6 +319,7 @@ HTTP endpoints:
 
 - `GET /`: Canvas observatory
 - `GET /api/status`: current world packet
+- `POST /api/analyse`: triggers LLM behavioural analysis; returns `{stats, analysis}`
 - `/static/*`: frontend assets
 
 WebSocket `/ws` — client commands:
@@ -282,27 +337,28 @@ JSON commands:
 {"type": "set_speed", "speed": 100}
 ```
 
-Broadcast packet includes: `tick`, `simulation_number`, `time_scale`, `time_of_day`, `is_daytime`, `weather`, `day_number`, `event_active`, `event_topic`, `fight_locations`, specimens, leaderboard, behavior analysis, animals, plants, teleporter (with `grow_phase`), and zone geometry. Each specimen packet includes identity, position, needs, housing, action, inventory, points, `new_arrival`, `sleeping`, `pregnant`, `is_running`, `run_stamina`, `intoxicated`, and `reputation`. Each animal packet includes species, position, energy, `sleeping`, `mad`, `new_arrival`, and `mating`.
+Broadcast packet includes: `tick`, `simulation_number`, `time_scale`, `running`, `time_of_day`, `is_daytime`, `weather`, `day_number`, `event_active`, `event_topic`, `fight_locations`, `reclamation_active`, `forest_coverage`, `game_over`, `llm_commentary`, `llm_thoughts`, specimens, leaderboard, behavior analysis, animals, plants, teleporter, and zone geometry.
 
 ## Project Structure
 
 ```text
 backend/
-    behavior.py          utility scoring, action execution, conflict, flee-to-safety, spectators
+    behavior.py          utility scoring, action execution, conflict, flee-to-safety, spectators, bar economy
     death.py             death conditions (starvation, old age, mad bear, fight, night exposure)
     genetics.py          inherited genetic traits and mutation
+    llm.py               Gemini (specimen thoughts) + Groq (commentary + analysis)
     names.py             200-name pool
     personality.py       personality traits, inheritance, mutation (incl. religious)
     reproduction.py      copulation (man+woman only), pregnancy, birth, inheritance
-    simulation.py        clock, tick loop, economy, ecology, weather, bear AI, scoring, packets
-    specimen.py          specimen state and serialization
+    simulation.py        clock, tick loop, economy (payday), ecology, weather, bear AI, scoring, packets
+    specimen.py          specimen state (wallet $100 start, pay_accrual) and serialization
     teleporter.py        roaming orb, suction, grow-before-relocate
-    websocket_server.py  FastAPI HTTP/WebSocket server
+    websocket_server.py  FastAPI HTTP/WebSocket server, /api/analyse endpoint
     world.py             zones, apartments, forest resources, animal AI state, social event
 
 frontend/
-    index.html           observatory layout, toolbar, speed slider, add-specimen form
-    main.js              Canvas rendering, interpolation, trails, hover, fight blinkers, hearts
+    index.html           observatory layout, toolbar, speed slider, analyse button, add-specimen form
+    main.js              Canvas rendering, interpolation, trails, hover, fight blinkers, hearts, analyse modal
     style.css            observatory styling and responsive layout
 
 tests/
@@ -317,5 +373,3 @@ source .venv/bin/activate
 python3 -m pytest -q
 uvicorn backend.websocket_server:app --reload
 ```
-
-The simulation is local-first and requires no API key. The main behavior decision path is in `backend/behavior.py`; state, ticking, ecology, and packet construction are in `backend/simulation.py`; rendering and interaction are in `frontend/main.js`.

@@ -92,8 +92,8 @@ class BehaviorEngine:
     def execute(self, specimen: "Specimen", action: str, simulation: "Simulation") -> None:
         specimen.current_action = action
         weather_speed = 0.65 if simulation.weather in ("rain", "storm") else 1.0
-        if action == "eat" and simulation.world.zone_at(specimen.position) == "cafe" and specimen.wallet >= 2:
-            specimen.wallet -= 2
+        if action == "eat" and simulation.world.zone_at(specimen.position) == "cafe" and specimen.wallet >= 5:
+            specimen.wallet -= 5
             specimen.hunger = max(0, specimen.hunger - 35)
         elif action == "eat":
             cafe = next(zone for zone in simulation.world.zones if zone.name == "cafe")
@@ -139,7 +139,6 @@ class BehaviorEngine:
             work_zone = next(zone for zone in simulation.world.zones if zone.name == "work")
             self._move_toward(specimen, (work_zone.x + work_zone.width / 2, work_zone.y + work_zone.height / 2), simulation, 4.5 * weather_speed)
             if simulation.world.zone_at(specimen.position) == "work":
-                specimen.wallet += specimen.salary
                 specimen.points += 1
                 specimen.reputation = min(100, specimen.reputation + 0.02)
         elif action == "attend_church":
@@ -217,12 +216,18 @@ class BehaviorEngine:
         elif action == "conflict":
             self._execute_conflict(specimen, simulation, weather_speed)
         elif action == "socialize":
-            venues = [zone for zone in simulation.world.zones if zone.name in ("bar", "church", "pop_up")]
+            tod = simulation.time_of_day
+            bar_open = tod >= 10.0 or tod < 4.0
+            venues = [zone for zone in simulation.world.zones if zone.name in ("bar", "church", "pop_up") and (zone.name != "bar" or bar_open)]
+            if not venues:
+                venues = [zone for zone in simulation.world.zones if zone.name in ("church", "pop_up")]
             if venues:
                 preferred = max(venues, key=lambda venue: specimen.personality.friendliness if venue.name == "bar" else specimen.personality.morality if venue.name == "church" else specimen.personality.curiosity)
                 self._move_toward(specimen, (preferred.x + preferred.width / 2, preferred.y + preferred.height / 2), simulation, 4.0 * weather_speed)
-            if simulation.world.zone_at(specimen.position) == "bar":
-                specimen.intoxicated_hours_remaining = min(3.0, specimen.intoxicated_hours_remaining + 0.04)
+            if simulation.world.zone_at(specimen.position) == "bar" and bar_open and specimen.wallet >= 10:
+                cost = random.uniform(10, 20)
+                specimen.wallet = max(0, specimen.wallet - cost)
+                specimen.intoxicated_hours_remaining = min(4.0, specimen.intoxicated_hours_remaining + 1.5)
             self._interact(specimen, simulation)
         elif action == "spectate_fight":
             fights = [s for s in simulation.specimens.values()
@@ -383,11 +388,15 @@ class BehaviorEngine:
         return 180 + specimen.personality.fearfulness * 0.8 + proximity * 60
 
     def _reproduction_utility(self, specimen: "Specimen", simulation: "Simulation") -> float:
-        if specimen.pregnant or specimen.hunger > 55 or specimen.fatigue > 70 or simulation.is_daytime:
+        if specimen.pregnant or specimen.hunger > 55 or specimen.fatigue > 70:
             return 0
         if specimen.age_hours < 24:
             return 0
         zone = simulation.world.zone_at(specimen.position)
+        if specimen.intoxicated_hours_remaining > 0 and zone == "homes" and not specimen.is_homeless:
+            return specimen.genetics.fertility * 0.9 + 55 + 80
+        if simulation.is_daytime:
+            return 0
         home_bonus = 35 if zone == "homes" and not specimen.is_homeless else 0
         return specimen.genetics.fertility * 0.9 + 55 + home_bonus
 

@@ -19,7 +19,8 @@ class Specimen:
     genetics: Genetics = field(default_factory=Genetics.random)
     hunger: float = 20.0
     fatigue: float = 20.0
-    wallet: float = 20.0
+    wallet: float = 100.0
+    pay_accrual: float = 0.0
     credit_score: float = 650.0
     position: Tuple[float, float] = (500.0, 500.0)
     relationships: Dict[int, float] = field(default_factory=dict)

@@ -91,6 +91,7 @@ class Simulation:
         self.world.zones = list(self.world._fixed_zones)
         self.reclamation_active = False
         self.game_over = False
+        self.running = True
         self.world._seed_forest_resources()
         for _ in range(42):
             self.spawn(new_arrival=False)
@@ -115,8 +116,14 @@ class Simulation:
     def step(self, seconds: float = 0.1) -> None:
         if not self.running or self.game_over:
             return
+        old_day = int(self.elapsed_seconds / (25 * 24))
         self.elapsed_seconds += seconds
         self.tick += 1
+        new_day = int(self.elapsed_seconds / (25 * 24))
+        if new_day > old_day and new_day % 5 == 4:
+            for s in self.specimens.values():
+                s.wallet += s.pay_accrual
+                s.pay_accrual = 0.0
         self._update_weather(seconds)
         self.world.update_pop_up(seconds)
         self.world.grow_plants(seconds, self.weather, reclaiming=self.reclamation_active)
@@ -166,6 +173,8 @@ class Simulation:
                 specimen.intoxicated_hours_remaining = max(0.0, specimen.intoxicated_hours_remaining - seconds / 25)
             action = "sleep" if specimen.sleeping else self.behavior.choose(specimen, self)
             self.behavior.execute(specimen, action, self)
+            if action == "work" and self.world.zone_at(specimen.position) == "work":
+                specimen.pay_accrual += 10.0 / (24 * 25) * seconds
             specimen.points += self._action_points(specimen, action)
             self._resolve_forest_food(specimen)
             if not specimen.alive:
@@ -215,7 +224,7 @@ class Simulation:
         specimens = [specimen.to_packet() for specimen in self.specimens.values()]
         leaderboard = sorted(specimens, key=lambda specimen: specimen["points"], reverse=True)[:5]
         fight_locations = [{"x": round(s.position[0], 1), "y": round(s.position[1], 1)} for s in self.specimens.values() if s.current_action in ("fighting", "being_attacked", "retaliating")]
-        return {"simulation_number": self.simulation_number, "tick": self.tick, "time_scale": self.time_scale, "time_of_day": round(self.time_of_day, 2), "is_daytime": self.is_daytime, "weather": self.weather, "day_number": int(self.elapsed_seconds / (25 * 24)) + 1, "specimens": specimens, "leaderboard": leaderboard, "behavior_analysis": [self._behavior_analysis(specimen) for specimen in sorted(self.specimens.values(), key=lambda item: item.points, reverse=True)[:5]], "death_markers": self.death_markers, "animals": [resource.to_packet() for resource in self.world.resources.values() if resource.kind == "animal"], "plants": [resource.to_packet() for resource in self.world.resources.values() if resource.kind == "plant"], "teleporter": {"x": round(self.teleporter.position[0], 1), "y": round(self.teleporter.position[1], 1), "grow_phase": round(self.teleporter.grow_phase, 3)}, "event_active": self.world.pop_up_active, "event_topic": self.world.pop_up_topic, "fight_locations": fight_locations, "reclamation_active": self.reclamation_active, "forest_coverage": round(self.world.forest_coverage, 3), "game_over": self.game_over, "zones": [{"name": zone.name, "x": zone.x, "y": zone.y, "width": zone.width, "height": zone.height} for zone in self.world.zones + self.world.forest_shelters]}
+        return {"simulation_number": self.simulation_number, "tick": self.tick, "time_scale": self.time_scale, "running": self.running, "time_of_day": round(self.time_of_day, 2), "is_daytime": self.is_daytime, "weather": self.weather, "day_number": int(self.elapsed_seconds / (25 * 24)) + 1, "specimens": specimens, "leaderboard": leaderboard, "behavior_analysis": [self._behavior_analysis(specimen) for specimen in sorted(self.specimens.values(), key=lambda item: item.points, reverse=True)[:5]], "death_markers": self.death_markers, "animals": [resource.to_packet() for resource in self.world.resources.values() if resource.kind == "animal"], "plants": [resource.to_packet() for resource in self.world.resources.values() if resource.kind == "plant"], "teleporter": {"x": round(self.teleporter.position[0], 1), "y": round(self.teleporter.position[1], 1), "grow_phase": round(self.teleporter.grow_phase, 3)}, "event_active": self.world.pop_up_active, "event_topic": self.world.pop_up_topic, "fight_locations": fight_locations, "reclamation_active": self.reclamation_active, "forest_coverage": round(self.world.forest_coverage, 3), "game_over": self.game_over, "zones": [{"name": zone.name, "x": zone.x, "y": zone.y, "width": zone.width, "height": zone.height} for zone in self.world.zones + self.world.forest_shelters]}
 
     def _record_death(self, position, name: str, entity_type: str, cause: str, action: str = "unknown") -> None:
         self.death_markers.append({"x": round(position[0], 1), "y": round(position[1], 1), "name": name, "entity_type": entity_type, "cause": cause, "action": action, "tick": self.tick})
