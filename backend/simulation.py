@@ -125,7 +125,6 @@ class Simulation:
         self._resolve_deer_reproduction()
         self._resolve_deer_behavior()
         self._resolve_bear_behavior(seconds)
-        self._resolve_homeless_group_behavior(seconds)
         self._replenish_wildlife()
         self.teleporter.update(seconds)
         births = []
@@ -187,6 +186,7 @@ class Simulation:
         for child in births:
             self.specimens[child.id] = child
         self.specimens = {key: value for key, value in self.specimens.items() if value.alive}
+        self._resolve_homeless_group_behavior(seconds)
 
     def wake_specimen(self, specimen_id: int) -> bool:
         specimen = self.specimens.get(specimen_id)

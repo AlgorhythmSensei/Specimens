@@ -17,7 +17,7 @@ class Teleporter:
     def update(self, seconds: float) -> None:
         if self._grow_remaining > 0:
             self._grow_remaining = max(0.0, self._grow_remaining - seconds)
-            if self._grow_remaining == 0.0:
+            if self._grow_remaining <= 0.0:
                 self.position = (random.uniform(20, self.world.width - 20), random.uniform(20, self.world.height - 20))
             return
         if random.random() < seconds / 18:

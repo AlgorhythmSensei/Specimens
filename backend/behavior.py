@@ -137,12 +137,12 @@ class BehaviorEngine:
         elif action == "attend_church":
             church = next(zone for zone in simulation.world.zones if zone.name == "church")
             self._move_toward(specimen, (church.x + church.width / 2, church.y + church.height / 2), simulation, 5.0 * weather_speed)
-            self._interact(specimen, simulation, "socialize")
+            self._interact(specimen, simulation)
         elif action == "attend_event":
             pop_up = next((zone for zone in simulation.world.zones if zone.name == "pop_up"), None)
             if pop_up and simulation.world.pop_up_active:
                 self._move_toward(specimen, (pop_up.x + pop_up.width / 2, pop_up.y + pop_up.height / 2), simulation, 4.5 * weather_speed)
-                self._interact(specimen, simulation, "socialize")
+                self._interact(specimen, simulation)
         elif action == "chase_deer":
             deer_list = [r for r in simulation.world.resources.values() if r.species == "deer" and not r.sleeping]
             if deer_list:
@@ -185,7 +185,7 @@ class BehaviorEngine:
             destination = next(zone for zone in simulation.world.zones if zone.name == "forest")
             self._move_toward(specimen, (destination.x + destination.width / 2, destination.y + destination.height / 2), simulation, 5.0 * weather_speed)
         elif action == "reproduce":
-            self._interact(specimen, simulation, action)
+            self._interact(specimen, simulation)
         elif action == "conflict":
             self._execute_conflict(specimen, simulation, weather_speed)
         elif action == "socialize":
@@ -195,7 +195,7 @@ class BehaviorEngine:
                 self._move_toward(specimen, (preferred.x + preferred.width / 2, preferred.y + preferred.height / 2), simulation, 4.0 * weather_speed)
             if simulation.world.zone_at(specimen.position) == "bar":
                 specimen.intoxicated_hours_remaining = min(3.0, specimen.intoxicated_hours_remaining + 0.04)
-            self._interact(specimen, simulation, action)
+            self._interact(specimen, simulation)
         elif action == "theft":
             targets = [c for c in simulation.specimens.values()
                        if c.id != specimen.id and c.wallet > 15
@@ -293,22 +293,16 @@ class BehaviorEngine:
             target = min(resources, key=lambda resource: math.dist(resource.position, specimen.position))
             self._move_toward(specimen, target.position, simulation, speed)
 
-    def _interact(self, specimen: "Specimen", simulation: "Simulation", action: str) -> None:
+    def _interact(self, specimen: "Specimen", simulation: "Simulation") -> None:
         nearby = [candidate for candidate in simulation.specimens.values() if candidate.id != specimen.id and math.dist(candidate.position, specimen.position) < 45]
         if not nearby:
             return
         other = random.choice(nearby)
-        if action == "conflict":
-            damage = max(1, specimen.genetics.attack - other.genetics.defense / 2) / 8
-            other.hunger += damage
-            specimen.adjust_relationship(other.id, -5)
-            specimen.reputation = max(0, specimen.reputation - 3)
-        else:
-            gain = 2 + specimen.personality.friendliness / 30
-            if other.reputation < 25:
-                gain *= 0.5
-            specimen.adjust_relationship(other.id, gain)
-            other.adjust_relationship(specimen.id, 2)
+        gain = 2 + specimen.personality.friendliness / 30
+        if other.reputation < 25:
+            gain *= 0.5
+        specimen.adjust_relationship(other.id, gain)
+        other.adjust_relationship(specimen.id, 2)
 
     def _sunday_church_utility(self, specimen: "Specimen", simulation: "Simulation") -> float:
         if simulation.day_of_week != 6:

@@ -12,7 +12,26 @@ let animationFrame = 0;
 let hoveredId = null;
 let hoveredDeathMarker = null;
 let selectedId = null;
+let selectedAnimalId = null;
 let focusedId = null;
+let hoverTimeout = null;
+
+function clearHoverCards() {
+  hoveredId = null;
+  hoveredDeathMarker = null;
+  document.querySelector('#hover-card').setAttribute('aria-hidden', 'true');
+  const zc = document.querySelector('#zone-card');
+  zc.setAttribute('aria-hidden', 'true');
+  zc.dataset.zone = '';
+  zc.dataset.resourceId = '';
+  zc.dataset.teleporter = 'false';
+  canvas.style.cursor = 'default';
+}
+
+function resetHoverTimer() {
+  clearTimeout(hoverTimeout);
+  hoverTimeout = setTimeout(clearHoverCards, 7000);
+}
 const colors = { cafe: '#f2b56b', bar: '#d79b88', church: '#b8a8cf', forest: '#9bbd91', homes: '#c7b9a2', pop_up: '#e8d85d', forest_shelter: '#a08060', work: '#7ab3c8' };
 const venueDescriptions = {
   cafe: ['Coffee, gossip, and hurried breakfasts.', 'A warm refuge where hunger becomes conversation.'],
@@ -30,6 +49,7 @@ function zoneDescription(zone, packet) { if (zone.name === 'pop_up' && packet.ev
 
 function draw(packet) {
   packet.specimens.forEach(specimen => {
+    if (specimen.action === 'teleported') { trails.set(specimen.id, []); return; }
     const trail = trails.get(specimen.id) || [];
     const last = trail[trail.length - 1];
     if (!last || Math.hypot(last.x - specimen.x, last.y - specimen.y) > 0.5) trail.push({ x: specimen.x, y: specimen.y });
@@ -160,10 +180,22 @@ function vitalsMarkup(specimen) {
   return `<div><span>HUNGER</span><strong>${specimen.hunger}%</strong></div><div><span>FATIGUE</span><strong>${specimen.fatigue}%</strong></div><div><span>WALLET</span><strong>$${specimen.wallet}</strong></div><div><span>STATUS</span><strong>${specimen.is_homeless ? 'homeless' : 'housed'}</strong></div><div><span>GENDER</span><strong>${specimen.gender}</strong></div><div><span>ACTION</span><strong>${specimen.action}</strong></div><div><span>REPUTATION</span><strong>${specimen.reputation}</strong></div>`;
 }
 
+function animalVitalsMarkup(animal) {
+  const maxEnergy = animal.species === 'bear' ? 60 : 28;
+  const energyPct = Math.round(animal.energy / maxEnergy * 100);
+  const rows = [
+    ['SPECIES', animal.species],
+    ['ENERGY', `${energyPct}%`],
+    ['STATE', animal.sleeping ? 'sleeping' : animal.mad ? 'enraged' : animal.species === 'bear' ? 'hunting' : 'grazing'],
+  ];
+  return rows.map(([k, v]) => `<div><span>${k}</span><strong>${v}</strong></div>`).join('');
+}
+
 function updateAgentCards(packet) {
   if (!packet) return;
   const hovered = packet.specimens.find(specimen => specimen.id === hoveredId);
   const selected = packet.specimens.find(specimen => specimen.id === selectedId);
+  const selectedAnimal = selectedAnimalId ? [...packet.animals].find(a => a.id === selectedAnimalId) : null;
   const hoverCard = document.querySelector('#hover-card');
   const zoneCard = document.querySelector('#zone-card');
   const selectedCard = document.querySelector('#selected-card');
@@ -186,8 +218,17 @@ function updateAgentCards(packet) {
   if (zoneCard.dataset.teleporter === 'true') zoneCard.innerHTML = '<b>TELEPORTER ORB</b><span>A volatile moving orb. Touching it instantly sends a specimen to a random location in the world.</span>';
   if (hoveredDeathMarker) zoneCard.innerHTML = `<b>${hoveredDeathMarker.name}</b><span>${hoveredDeathMarker.entity_type === 'animal' ? 'Animal' : 'Specimen'} died from ${hoveredDeathMarker.cause.replaceAll('_', ' ')} while ${hoveredDeathMarker.action.replaceAll('_', ' ')}.</span>`;
   zoneCard.setAttribute('aria-hidden', String(Boolean(hovered) || (!zone && !resource && zoneCard.dataset.teleporter !== 'true')));
-  selectedCard.setAttribute('aria-hidden', String(!selected));
-  if (selected) { const analysis = packet.behavior_analysis?.find(item => item.id === selected.id); document.querySelector('#selected-name').textContent = `${selected.name} #${selected.id}`; document.querySelector('#selected-vitals').innerHTML = `${vitalsMarkup(selected)}${analysis ? `<div class="analysis-detail"><span>WHY</span><strong>${analysis.reason}</strong></div>` : ''}`; }
+  selectedCard.setAttribute('aria-hidden', String(!selected && !selectedAnimal));
+  if (selected) {
+    const analysis = packet.behavior_analysis?.find(item => item.id === selected.id);
+    document.querySelector('#selected-name').textContent = `${selected.name} #${selected.id}`;
+    document.querySelector('#selected-vitals').innerHTML = `${vitalsMarkup(selected)}${analysis ? `<div class="analysis-detail"><span>WHY</span><strong>${analysis.reason}</strong></div>` : ''}`;
+    document.querySelector('.card-kicker').textContent = 'SPECIMEN VITALS';
+  } else if (selectedAnimal) {
+    document.querySelector('#selected-name').textContent = `${selectedAnimal.species.toUpperCase()} #${selectedAnimal.id}`;
+    document.querySelector('#selected-vitals').innerHTML = animalVitalsMarkup(selectedAnimal);
+    document.querySelector('.card-kicker').textContent = 'ANIMAL VITALS';
+  }
 }
 
 canvas.addEventListener('pointermove', event => {
@@ -207,10 +248,23 @@ canvas.addEventListener('pointermove', event => {
   zoneCard.dataset.teleporter = String(teleporterHit && !hit && !resourceHit && !hoveredDeathMarker);
   if ((zone || teleporterHit || resourceHit || hoveredDeathMarker) && !hit) { zoneCard.style.left = `${event.offsetX + 16}px`; zoneCard.style.top = `${event.offsetY + 16}px`; }
   updateAgentCards(previousPacket);
+  if (hit || resourceHit || teleporterHit || hoveredDeathMarker || zone) resetHoverTimer();
+  else { clearTimeout(hoverTimeout); clearHoverCards(); }
 });
-canvas.addEventListener('pointerleave', () => { hoveredId = null; hoveredDeathMarker = null; document.querySelector('#hover-card').setAttribute('aria-hidden', 'true'); document.querySelector('#zone-card').setAttribute('aria-hidden', 'true'); canvas.style.cursor = 'default'; });
-canvas.addEventListener('click', event => { const hit = specimenAtEvent(event); selectedId = hit?.specimen.id ?? null; focusedId = selectedId; if (hit?.specimen.sleeping) window.simSocket?.send(JSON.stringify({ type: 'wake_specimen', id: hit.specimen.id })); updateAgentCards(previousPacket); });
-document.querySelector('#close-card').addEventListener('click', event => { event.stopPropagation(); selectedId = null; updateAgentCards(previousPacket); });
+canvas.addEventListener('pointerleave', clearHoverCards);
+canvas.addEventListener('click', event => {
+  const hit = specimenAtEvent(event);
+  if (hit) {
+    selectedId = hit.specimen.id; selectedAnimalId = null; focusedId = selectedId;
+    if (hit.specimen.sleeping) window.simSocket?.send(JSON.stringify({ type: 'wake_specimen', id: hit.specimen.id }));
+  } else {
+    const resourceHit = resourceAtEvent(event);
+    if (resourceHit && resourceHit.resource.kind === 'animal') { selectedAnimalId = resourceHit.resource.id; selectedId = null; focusedId = null; }
+    else { selectedId = null; selectedAnimalId = null; focusedId = null; }
+  }
+  updateAgentCards(previousPacket);
+});
+document.querySelector('#close-card').addEventListener('click', event => { event.stopPropagation(); selectedId = null; selectedAnimalId = null; updateAgentCards(previousPacket); });
 
 function animate() { animationFrame += 1; if (previousPacket) render(interpolatedPacket()); requestAnimationFrame(animate); }
 
