@@ -81,6 +81,7 @@ class World:
         self._world_elapsed: float = 0.0
         self._pop_up_day: int = -1
         self._pop_up_start_hour: float = 10.0
+        self._forest_expansion: float = 0.0
         self._seed_forest_resources()
 
     def update_pop_up(self, seconds: float) -> None:
@@ -194,6 +195,17 @@ class World:
                     if next_y <= forest.y + 5 or next_y >= forest.y + forest.height - 5:
                         animal.velocity = (animal.velocity[0], -animal.velocity[1])
                     animal.position = (max(forest.x + 5, min(forest.x + forest.width - 5, next_x)), max(forest.y + 5, min(forest.y + forest.height - 5, next_y)))
+
+    def expand_forest(self, units: float) -> None:
+        self._forest_expansion = min(750.0, self._forest_expansion + units)
+        new_x = 750.0 - self._forest_expansion
+        new_width = 250.0 + self._forest_expansion
+        self.zones = [z for z in self.zones if z.name != "forest"]
+        self.zones.append(Zone("forest", new_x, 0, new_width, 1000))
+
+    @property
+    def forest_coverage(self) -> float:
+        return (250.0 + self._forest_expansion) / 1000.0
 
     def add_forest_shelter(self, position: Tuple[float, float]) -> Zone:
         x = max(755, min(position[0] - 30, 965))

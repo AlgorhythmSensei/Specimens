@@ -31,6 +31,8 @@ class Simulation:
         self.death_markers = []
         self.weather: str = "clear"
         self._weather_remaining: float = 0.0
+        self.reclamation_active: bool = False
+        self.game_over: bool = False
         for _ in range(42):
             self.spawn(new_arrival=False)
 
@@ -85,6 +87,10 @@ class Simulation:
         self.death_markers.clear()
         self.world.resources.clear()
         self.world.forest_shelters.clear()
+        self.world._forest_expansion = 0.0
+        self.world.zones = list(self.world._fixed_zones)
+        self.reclamation_active = False
+        self.game_over = False
         self.world._seed_forest_resources()
         for _ in range(42):
             self.spawn(new_arrival=False)
@@ -107,7 +113,7 @@ class Simulation:
             self._weather_remaining = random.uniform(lo, hi)
 
     def step(self, seconds: float = 0.1) -> None:
-        if not self.running:
+        if not self.running or self.game_over:
             return
         self.elapsed_seconds += seconds
         self.tick += 1
@@ -187,6 +193,7 @@ class Simulation:
             self.specimens[child.id] = child
         self.specimens = {key: value for key, value in self.specimens.items() if value.alive}
         self._resolve_homeless_group_behavior(seconds)
+        self._resolve_reclamation(seconds)
 
     def wake_specimen(self, specimen_id: int) -> bool:
         specimen = self.specimens.get(specimen_id)
@@ -208,7 +215,7 @@ class Simulation:
         specimens = [specimen.to_packet() for specimen in self.specimens.values()]
         leaderboard = sorted(specimens, key=lambda specimen: specimen["points"], reverse=True)[:5]
         fight_locations = [{"x": round(s.position[0], 1), "y": round(s.position[1], 1)} for s in self.specimens.values() if s.current_action in ("fighting", "being_attacked", "retaliating")]
-        return {"simulation_number": self.simulation_number, "tick": self.tick, "time_scale": self.time_scale, "time_of_day": round(self.time_of_day, 2), "is_daytime": self.is_daytime, "weather": self.weather, "day_number": int(self.elapsed_seconds / (25 * 24)) + 1, "specimens": specimens, "leaderboard": leaderboard, "behavior_analysis": [self._behavior_analysis(specimen) for specimen in sorted(self.specimens.values(), key=lambda item: item.points, reverse=True)[:5]], "death_markers": self.death_markers, "animals": [resource.to_packet() for resource in self.world.resources.values() if resource.kind == "animal"], "plants": [resource.to_packet() for resource in self.world.resources.values() if resource.kind == "plant"], "teleporter": {"x": round(self.teleporter.position[0], 1), "y": round(self.teleporter.position[1], 1), "grow_phase": round(self.teleporter.grow_phase, 3)}, "event_active": self.world.pop_up_active, "event_topic": self.world.pop_up_topic, "fight_locations": fight_locations, "zones": [{"name": zone.name, "x": zone.x, "y": zone.y, "width": zone.width, "height": zone.height} for zone in self.world.zones + self.world.forest_shelters]}
+        return {"simulation_number": self.simulation_number, "tick": self.tick, "time_scale": self.time_scale, "time_of_day": round(self.time_of_day, 2), "is_daytime": self.is_daytime, "weather": self.weather, "day_number": int(self.elapsed_seconds / (25 * 24)) + 1, "specimens": specimens, "leaderboard": leaderboard, "behavior_analysis": [self._behavior_analysis(specimen) for specimen in sorted(self.specimens.values(), key=lambda item: item.points, reverse=True)[:5]], "death_markers": self.death_markers, "animals": [resource.to_packet() for resource in self.world.resources.values() if resource.kind == "animal"], "plants": [resource.to_packet() for resource in self.world.resources.values() if resource.kind == "plant"], "teleporter": {"x": round(self.teleporter.position[0], 1), "y": round(self.teleporter.position[1], 1), "grow_phase": round(self.teleporter.grow_phase, 3)}, "event_active": self.world.pop_up_active, "event_topic": self.world.pop_up_topic, "fight_locations": fight_locations, "reclamation_active": self.reclamation_active, "forest_coverage": round(self.world.forest_coverage, 3), "game_over": self.game_over, "zones": [{"name": zone.name, "x": zone.x, "y": zone.y, "width": zone.width, "height": zone.height} for zone in self.world.zones + self.world.forest_shelters]}
 
     def _record_death(self, position, name: str, entity_type: str, cause: str, action: str = "unknown") -> None:
         self.death_markers.append({"x": round(position[0], 1), "y": round(position[1], 1), "name": name, "entity_type": entity_type, "cause": cause, "action": action, "tick": self.tick})
@@ -336,6 +343,8 @@ class Simulation:
                         mad_target.current_action = "attacked_by_mad_bear"
                         self._record_death(mad_target.position, mad_target.name, "human", "mad_bear_attack", "bear_mad_attack")
                         mad_target.alive = False
+                        bear.energy = bear.max_energy
+                        bear.last_fed_hours = bear.age_hours
                         bear.mad_remaining_hours = 0.0
                         bear.mad_target_id = -1
                         bear.chasing = False
@@ -385,20 +394,28 @@ class Simulation:
             bear.chasing = False
             if target.kind == "plant":
                 was_poisonous = target.poisonous
+                gained = target.energy if not was_poisonous else 0
                 self.world.resources.pop(target.id, None)
                 if was_poisonous:
                     bear.mad_remaining_hours = 0.5
                     candidates = [s for s in self.specimens.values() if not self.world.in_shelter(s.position)]
                     if candidates:
                         bear.mad_target_id = min(candidates, key=lambda s: math.dist(s.position, bear.position)).id
-                bear.current_action = "bear_ate_poisonous_plant" if was_poisonous else "bear_eating_plant"
+                    bear.current_action = "bear_ate_poisonous_plant"
+                else:
+                    bear.energy = min(bear.max_energy, bear.energy + gained)
+                    bear.current_action = "bear_eating_plant"
+                    if bear.energy >= bear.max_energy:
+                        bear.sleeping = True
+                        bear.sleep_remaining = 4.0 * 25
+                        bear.current_action = "bear_resting_full"
             else:
                 self.world.resources.pop(target.id, None)
-                bear.current_action = "bear_hunting_deer"
+                bear.energy = bear.max_energy
                 bear.last_fed_hours = bear.age_hours
                 bear.sleeping = True
-                bear.sleep_remaining = 3.0 * 25
-                bear.current_action = "bear_sleeping_after_meal"
+                bear.sleep_remaining = 4.0 * 25
+                bear.current_action = "bear_resting_full"
 
     def _resolve_homeless_group_behavior(self, seconds: float) -> None:
         homeless = [s for s in self.specimens.values() if s.is_homeless and s.alive]
@@ -437,6 +454,18 @@ class Simulation:
                     member.points += 20
                     member.current_action = "killed_bear"
                 break
+
+    def _resolve_reclamation(self, seconds: float) -> None:
+        if self.specimens:
+            self.reclamation_active = False
+            return
+        self.reclamation_active = True
+        # 10% of map area per simulated day = 100 units wide per sim-day (height is 1000)
+        # 1 sim-day = 25 * 24 real seconds → rate = 100 / (25 * 24) units/real-second
+        units_per_second = 100.0 / (25 * 24)
+        self.world.expand_forest(units_per_second * seconds)
+        if self.world.forest_coverage >= 1.0:
+            self.game_over = True
 
     def _replenish_wildlife(self) -> None:
         forest = next(zone for zone in self.world.zones if zone.name == "forest")
