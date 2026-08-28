@@ -385,7 +385,9 @@ class BehaviorEngine:
             return 0
         if specimen.age_hours < 24:
             return 0
-        return specimen.genetics.fertility * .35
+        zone = simulation.world.zone_at(specimen.position)
+        home_bonus = 35 if zone == "homes" and not specimen.is_homeless else 0
+        return specimen.genetics.fertility * 0.9 + 55 + home_bonus
 
     def _donation_utility(self, specimen: "Specimen", simulation: "Simulation") -> float:
         if specimen.is_homeless or specimen.wallet < 10:

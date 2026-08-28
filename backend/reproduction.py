@@ -9,7 +9,7 @@ from .genetics import Genetics
 from .specimen import Specimen
 
 PREGNANCY_HOURS = 9.0
-MIN_RELATIONSHIP = 40.0
+MIN_RELATIONSHIP = 25.0
 MAX_HUNGER = 55.0
 MAX_FATIGUE = 70.0
 COPULATE_RANGE = 22.0
