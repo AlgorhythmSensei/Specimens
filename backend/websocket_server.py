@@ -18,8 +18,10 @@ clients: set[WebSocket] = set()
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     task = asyncio.create_task(simulation.run())
+    broadcast_task = asyncio.create_task(broadcaster())
     yield
     task.cancel()
+    broadcast_task.cancel()
 
 
 app = FastAPI(title="Specimens Evolution Engine", lifespan=lifespan)
@@ -57,6 +59,8 @@ async def websocket_endpoint(websocket: WebSocket):
                     simulation.add_specimen(command.get("values", {}))
                 elif command.get("type") == "wake_specimen":
                     simulation.wake_specimen(int(command.get("id", 0)))
+                elif command.get("type") == "set_speed":
+                    simulation.time_scale = max(0.25, min(20.0, float(command.get("speed", 1.0))))
             await websocket.send_text(json.dumps({"type": "command_ack", "running": simulation.running}))
     except WebSocketDisconnect:
         clients.discard(websocket)
@@ -76,6 +80,3 @@ async def broadcaster():
         await asyncio.sleep(.1)
 
 
-@app.on_event("startup")
-async def start_broadcaster():
-    asyncio.create_task(broadcaster())

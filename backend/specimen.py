@@ -32,6 +32,18 @@ class Specimen:
     sleeping: bool = False
     points: int = 0
     new_arrival: bool = True
+    has_job: bool = False
+    salary: float = 0.0
+    max_age_hours: float = 0.0
+    work_start: float = 8.0
+    work_end: float = 17.0
+    reputation: float = 50.0
+    pregnant: bool = False
+    pregnancy_hours_remaining: float = 0.0
+    partner_id: int = -1
+    run_remaining_hours: float = 1.0
+    is_running: bool = False
+    intoxicated_hours_remaining: float = 0.0
 
     @classmethod
     def spawn(cls, specimen_id: int, position: Tuple[float, float], home: Optional[Tuple[float, float]] = None) -> "Specimen":
@@ -39,7 +51,7 @@ class Specimen:
         return cls(specimen_id, random.choice(("man", "woman")), homeless, position=position, home=home)
 
     def to_packet(self) -> dict:
-        return {"id": self.id, "name": self.name, "x": round(self.position[0], 1), "y": round(self.position[1], 1), "hunger": round(self.hunger, 1), "fatigue": round(self.fatigue, 1), "wallet": round(self.wallet, 1), "gender": self.gender, "is_homeless": self.is_homeless, "home_kind": self.home_kind if self.home else None, "action": self.current_action, "age_hours": round(self.age_hours, 1), "plant_goods": self.plant_goods, "animal_goods": self.animal_goods, "sleeping": self.sleeping, "points": self.points, "new_arrival": self.new_arrival}
+        return {"id": self.id, "name": self.name, "x": round(self.position[0], 1), "y": round(self.position[1], 1), "hunger": round(self.hunger, 1), "fatigue": round(self.fatigue, 1), "wallet": round(self.wallet, 1), "gender": self.gender, "is_homeless": self.is_homeless, "home_kind": self.home_kind if self.home else None, "action": self.current_action, "age_hours": round(self.age_hours, 1), "plant_goods": self.plant_goods, "animal_goods": self.animal_goods, "sleeping": self.sleeping, "points": self.points, "new_arrival": self.new_arrival, "reputation": round(self.reputation, 1), "pregnant": self.pregnant, "is_running": self.is_running, "run_stamina": round(self.run_remaining_hours, 2), "intoxicated": self.intoxicated_hours_remaining > 0}
 
     def relationship_with(self, other_id: int) -> float:
         return self.relationships.get(other_id, 0.0)

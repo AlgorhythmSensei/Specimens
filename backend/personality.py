@@ -17,6 +17,7 @@ class Personality:
     fearfulness: int
     honesty: int
     forgetfulness: int
+    religious: int
 
     @classmethod
     def random(cls) -> "Personality":
