@@ -460,10 +460,10 @@ class Simulation:
                 deer.chasing = True
                 deer.current_action = "deer_avoiding_human"
                 continue
-            deer.chasing = False
             nearby_plants = [r for r in self.world.resources.values() if r.kind == "plant" and r.energy > 0 and math.dist(r.position, deer.position) < 120]
             pack = [d for d in all_deer if d.id != deer.id and math.dist(d.position, deer.position) < 180]
             if deer.energy < deer.max_energy * 0.5 and nearby_plants:
+                deer.chasing = False
                 target_plant = min(nearby_plants, key=lambda p: math.dist(p.position, deer.position))
                 dx, dy = target_plant.position[0] - deer.position[0], target_plant.position[1] - deer.position[1]
                 dist = math.hypot(dx, dy) or 1
@@ -472,6 +472,7 @@ class Simulation:
                 deer.position = (max(forest.x + 5, min(forest.x + forest.width - 5, nx)), max(forest.y + 5, min(forest.y + forest.height - 5, ny)))
                 deer.current_action = "deer_grazing"
             elif pack:
+                deer.chasing = False
                 cx = sum(d.position[0] for d in pack) / len(pack)
                 cy = sum(d.position[1] for d in pack) / len(pack)
                 dx, dy = cx - deer.position[0], cy - deer.position[1]
@@ -481,6 +482,8 @@ class Simulation:
                     ny = deer.position[1] + dy / dist * 4
                     deer.position = (max(forest.x + 5, min(forest.x + forest.width - 5, nx)), max(forest.y + 5, min(forest.y + forest.height - 5, ny)))
                     deer.current_action = "deer_with_pack"
+            else:
+                deer.chasing = False
 
     def _resolve_deer_feeding(self) -> None:
         deer = [resource for resource in self.world.resources.values() if resource.species == "deer" and not resource.sleeping]
@@ -498,6 +501,7 @@ class Simulation:
                 self._record_death(herbivore.position, "Deer", "animal", "poisonous_plant", "deer_eating_plant")
                 self.world.resources.pop(herbivore.id, None)
             else:
+                herbivore.energy = min(herbivore.max_energy, herbivore.energy + plant.energy)
                 herbivore.current_action = "deer_eating_plant"
 
     def sell_goods_at_cafe(self, specimen: Specimen) -> None:
