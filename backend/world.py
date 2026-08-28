@@ -135,7 +135,7 @@ class World:
             position = (random.uniform(forest.x + 12, forest.x + forest.width - 12), random.uniform(forest.y + 12, forest.y + forest.height - 12))
             self.resources[self._next_resource_id] = ForestResource(self._next_resource_id, "animal", position, 60, species="bear")
             self._next_resource_id += 1
-        for _ in range(34):
+        for _ in range(40):
             position = (random.uniform(forest.x + 5, forest.x + forest.width - 5), random.uniform(forest.y + 5, forest.y + forest.height - 5))
             self.resources[self._next_resource_id] = ForestResource(self._next_resource_id, "plant", position, 18, poisonous=random.random() < 0.2)
             self._next_resource_id += 1
@@ -150,10 +150,15 @@ class World:
             if resource.kind == "plant":
                 resource.energy = min(resource.max_energy, resource.energy + seconds * resource.growth_rate * growth_multiplier)
         plant_count = sum(1 for r in self.resources.values() if r.kind == "plant")
-        if plant_count < 60 and random.random() < seconds * 0.12 * spawn_multiplier:
-            position = (random.uniform(forest.x + 5, forest.x + forest.width - 5), random.uniform(forest.y + 5, forest.y + forest.height - 5))
-            self.resources[self._next_resource_id] = ForestResource(self._next_resource_id, "plant", position, 18, poisonous=random.random() < 0.2)
-            self._next_resource_id += 1
+        if plant_count < 60:
+            if plant_count < 40:
+                spawn_rate = seconds * 0.6 * spawn_multiplier
+            else:
+                spawn_rate = seconds * 0.12 * spawn_multiplier
+            if random.random() < spawn_rate:
+                position = (random.uniform(forest.x + 5, forest.x + forest.width - 5), random.uniform(forest.y + 5, forest.y + forest.height - 5))
+                self.resources[self._next_resource_id] = ForestResource(self._next_resource_id, "plant", position, 18, poisonous=random.random() < 0.2)
+                self._next_resource_id += 1
 
     def move_animals(self, seconds: float = 0.1) -> None:
         forest = next(zone for zone in self.zones if zone.name == "forest")

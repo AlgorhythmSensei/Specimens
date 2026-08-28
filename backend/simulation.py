@@ -315,8 +315,10 @@ class Simulation:
                 continue
             target_pos, target = min(targets, key=lambda item: math.dist(item[0], bear.position))
             distance = math.dist(target_pos, bear.position)
+            _bear_max_run = 10 / 60
+            _bear_run_threshold = _bear_max_run * 0.10
             if distance > attack_range:
-                if bear.run_remaining_hours > 0:
+                if bear.run_remaining_hours > _bear_run_threshold:
                     dx, dy = target_pos[0] - bear.position[0], target_pos[1] - bear.position[1]
                     run_speed = random.uniform(35, 40)
                     nx = bear.position[0] + dx / distance * run_speed
@@ -326,9 +328,9 @@ class Simulation:
                     bear.chasing = True
                     bear.current_action = "bear_chasing"
                 else:
-                    bear.run_remaining_hours = min(10 / 60, bear.run_remaining_hours + seconds / 25 * 0.5)
+                    bear.run_remaining_hours = min(_bear_max_run, bear.run_remaining_hours + seconds / 25 * 0.5)
                     bear.chasing = False
-                    bear.current_action = "bear_resting"
+                    bear.current_action = "bear_roaming"
                 continue
             bear.chasing = False
             if isinstance(target, Specimen):
