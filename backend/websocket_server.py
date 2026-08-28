@@ -60,7 +60,7 @@ async def websocket_endpoint(websocket: WebSocket):
                 elif command.get("type") == "wake_specimen":
                     simulation.wake_specimen(int(command.get("id", 0)))
                 elif command.get("type") == "set_speed":
-                    simulation.time_scale = max(0.25, min(20.0, float(command.get("speed", 1.0))))
+                    simulation.time_scale = max(0.25, min(10000.0, float(command.get("speed", 1.0))))
             await websocket.send_text(json.dumps({"type": "command_ack", "running": simulation.running}))
     except WebSocketDisconnect:
         clients.discard(websocket)

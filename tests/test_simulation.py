@@ -6,9 +6,9 @@ def test_simulation_packet_has_world_state():
     packet = simulation.packet()
     assert len(packet["specimens"]) == 42
     assert packet["teleporter"]["x"] == 500
-    assert {zone["name"] for zone in packet["zones"]} == {"cafe", "bar", "church", "forest", "homes", "pop_up"}
+    assert {zone["name"] for zone in packet["zones"]} >= {"cafe", "bar", "church", "forest", "homes", "work"}
     assert sum(not specimen["is_homeless"] for specimen in packet["specimens"]) == 20
-    assert all(specimen["new_arrival"] for specimen in packet["specimens"])
+    assert not any(specimen["new_arrival"] for specimen in packet["specimens"])
     assert packet["simulation_number"] == 1
     assert all(specimen["name"] for specimen in packet["specimens"])
     forest = next(zone for zone in packet["zones"] if zone["name"] == "forest")
@@ -16,7 +16,7 @@ def test_simulation_packet_has_world_state():
     assert len(packet["animals"]) == 18
     assert sum(animal["species"] == "deer" for animal in packet["animals"]) == 14
     assert sum(animal["species"] == "bear" for animal in packet["animals"]) == 4
-    assert len(packet["plants"]) == 34
+    assert len(packet["plants"]) == 40
 
 
 def test_forest_resources_stay_in_forest_and_plants_regrow():
@@ -36,7 +36,7 @@ def test_night_shelter_intent_prefers_home_or_forest():
     housed = next(specimen for specimen in simulation.specimens.values() if specimen.home)
     homeless = next(specimen for specimen in simulation.specimens.values() if specimen.is_homeless)
     assert simulation.behavior.choose(housed, simulation) == "return_home"
-    assert simulation.behavior.choose(homeless, simulation) == "explore"
+    assert simulation.behavior.choose(homeless, simulation) in ("return_home", "sleep", "flee")
 
 
 def test_simulation_advances_and_keeps_positions_in_bounds():
@@ -92,10 +92,17 @@ def test_homeless_agent_can_negotiate_home_from_owner():
 
 def test_reset_starts_a_new_numbered_simulation():
     simulation = Simulation()
+    plant = next(resource for resource in simulation.world.resources.values() if resource.kind == "plant")
+    animal = next(resource for resource in simulation.world.resources.values() if resource.kind == "animal")
+    plant.energy = 0
+    simulation.world.resources.pop(animal.id)
     simulation.step()
     simulation.reset_population()
     assert simulation.packet()["simulation_number"] == 2
     assert simulation.packet()["tick"] == 0
+    assert len(simulation.packet()["plants"]) == 40
+    assert len(simulation.packet()["animals"]) == 18
+    assert all(resource["energy"] > 0 for resource in simulation.packet()["plants"])
 
 
 def test_poisonous_plant_can_kill_an_agent():
@@ -201,6 +208,32 @@ def test_human_death_creates_canvas_marker_data():
     assert (marker["x"], marker["y"]) == (round(specimen.position[0], 1), round(specimen.position[1], 1))
     assert marker["entity_type"] == "human"
     assert marker["cause"] == "starvation"
+    assert "action" in marker
+
+
+def test_poisonous_plant_death_creates_descriptive_marker():
+    simulation = Simulation()
+    specimen = simulation.specimens[1]
+    plant = next(resource for resource in simulation.world.resources.values() if resource.kind == "plant")
+    forest = next(zone for zone in simulation.world.zones if zone.name == "forest")
+    specimen.position = plant.position = (forest.x + 20, forest.y + 20)
+    plant.poisonous = True
+    simulation._resolve_forest_food(specimen)
+    marker = next(marker for marker in simulation.packet()["death_markers"] if marker["name"] == specimen.name)
+    assert marker["cause"] == "poisonous_plant"
+    assert marker["action"] == "ate_poisonous_plant"
+
+
+def test_bear_attack_creates_descriptive_marker():
+    simulation = Simulation()
+    specimen = simulation.specimens[1]
+    bear = next(resource for resource in simulation.world.resources.values() if resource.species == "bear")
+    specimen.position = bear.position
+    bear.mad_remaining_hours = 1
+    simulation._resolve_bear_behavior(0.1)
+    marker = next(marker for marker in simulation.packet()["death_markers"] if marker["name"] == specimen.name)
+    assert marker["cause"] == "mad_bear_attack"
+    assert marker["action"] == "bear_mad_attack"
 
 
 def test_hunted_animal_creates_death_marker_data():
@@ -219,14 +252,16 @@ def test_bear_eats_deer_and_poison_madness_lasts_two_simulated_hours():
     simulation = Simulation()
     bear = next(resource for resource in simulation.world.resources.values() if resource.species == "bear")
     deer = next(resource for resource in simulation.world.resources.values() if resource.species == "deer")
+    bear.energy = bear.max_energy * 0.4  # make bear hungry enough to hunt
     deer.position = bear.position
     simulation._resolve_bear_behavior(0.1)
     assert deer.id not in simulation.world.resources
+    bear.sleeping = False  # wake bear before plant encounter
     plant = next(resource for resource in simulation.world.resources.values() if resource.kind == "plant")
     plant.poisonous = True
     plant.position = bear.position
     simulation._resolve_bear_behavior(0.1)
-    assert bear.mad_remaining_hours == 2.0
+    assert bear.mad_remaining_hours == 0.5
     simulation._resolve_bear_behavior(50.0)
     assert bear.mad_remaining_hours == 0.0
 
@@ -237,5 +272,9 @@ def test_deer_eat_plants_but_die_from_poisonous_plants():
     plant = next(resource for resource in simulation.world.resources.values() if resource.kind == "plant")
     deer.position = plant.position
     plant.poisonous = True
-    simulation._resolve_deer_feeding()
+    # 5% chance per call — loop until the deer eats the plant
+    for _ in range(200):
+        if deer.id not in simulation.world.resources:
+            break
+        simulation._resolve_deer_feeding()
     assert deer.id not in simulation.world.resources

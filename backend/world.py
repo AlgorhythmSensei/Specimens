@@ -29,6 +29,7 @@ class ForestResource:
         self.species = species if kind == "animal" else "plant"
         self.growth_rate = random.uniform(0.3, 1.5) if kind == "plant" else 0.0
         self.mad_remaining_hours = 0.0
+        self.mad_target_id: int = -1
         self.sleeping = False
         self.sleep_remaining = 0.0
         self.chasing = False
@@ -36,6 +37,10 @@ class ForestResource:
         self.last_fed_hours: float = -8.0
         self.run_remaining_hours: float = 10 / 60
         self.wander_remaining_hours: float = 0.0
+        self.circle_remaining_hours: float = 0.0
+        self.circle_center: tuple = (0.0, 0.0)
+        self.circle_angle: float = 0.0
+        self.current_action: str = ""
         if kind == "animal":
             if species == "bear":
                 self.max_age_hours = random.uniform(72, 180)
@@ -48,7 +53,7 @@ class ForestResource:
         self.velocity = (random.uniform(0.7, 1.3) * speed * math.cos(angle), random.uniform(0.7, 1.3) * speed * math.sin(angle))
 
     def to_packet(self) -> dict:
-        return {"id": self.id, "kind": self.kind, "species": self.species, "x": round(self.position[0], 1), "y": round(self.position[1], 1), "energy": round(self.energy, 1), "poisonous": self.poisonous, "sleeping": self.sleeping, "mad": self.mad_remaining_hours > 0, "new_arrival": self.age_hours < 1}
+        return {"id": self.id, "kind": self.kind, "species": self.species, "x": round(self.position[0], 1), "y": round(self.position[1], 1), "energy": round(self.energy, 1), "poisonous": self.poisonous, "sleeping": self.sleeping, "mad": self.mad_remaining_hours > 0, "new_arrival": self.age_hours < 1, "mating": self.current_action == "deer_mating"}
 
 
 class World:

@@ -10,7 +10,7 @@ if TYPE_CHECKING:
 
 
 class BehaviorEngine:
-    actions = ("eat", "sleep", "donate", "socialize", "attend_church", "attend_event", "work", "explore", "gather", "hunt", "chase_deer", "build_shelter", "sell_goods", "buy_home", "return_home", "sell_home", "move_in", "reproduce", "conflict", "flee", "flee_human", "wander", "theft")
+    actions = ("eat", "sleep", "donate", "socialize", "attend_church", "attend_event", "work", "explore", "gather", "hunt", "chase_deer", "build_shelter", "sell_goods", "buy_home", "return_home", "sell_home", "move_in", "reproduce", "conflict", "flee", "flee_human", "wander", "theft", "spectate_fight")
 
     def choose(self, specimen: "Specimen", simulation: "Simulation") -> str:
         zone = simulation.world.zone_at(specimen.position)
@@ -38,9 +38,17 @@ class BehaviorEngine:
             "flee_human": self._flee_human_utility(specimen, simulation),
             "wander": 15.0,
             "theft": self._theft_utility(specimen, simulation),
+            "spectate_fight": self._spectate_fight_utility(specimen, simulation),
         }
         if specimen.hunger > 90:
             utilities["eat"] += 100
+        # Lunch rush: midday pull toward cafe
+        tod = simulation.time_of_day
+        if 11.5 <= tod < 13.5 and specimen.hunger > 25:
+            utilities["eat"] += 55 + specimen.hunger * 0.4
+        # Always head to cafe when hungry enough
+        if specimen.hunger > 50:
+            utilities["eat"] += 35
         if zone == "forest" and specimen.hunger > 35:
             utilities["gather"] += 45
             utilities["hunt"] += 30
@@ -171,21 +179,39 @@ class BehaviorEngine:
         elif action == "flee_human":
             aggressors = self._nearby_aggressors(specimen, simulation)
             if aggressors:
-                nearest = min(aggressors, key=lambda a: math.dist(a.position, specimen.position))
-                dx, dy = specimen.position[0] - nearest.position[0], specimen.position[1] - nearest.position[1]
-                dist = math.hypot(dx, dy) or 1
                 can_run = specimen.run_remaining_hours > 0
                 flee_speed = (7.5 if can_run else 3.5) * specimen.genetics.speed / 50
                 specimen.is_running = can_run
                 if can_run:
                     specimen.run_remaining_hours = max(0.0, specimen.run_remaining_hours - 0.003)
-                specimen.position = simulation.world.clamp((specimen.position[0] + dx / dist * flee_speed, specimen.position[1] + dy / dist * flee_speed))
-                specimen.current_action = "fleeing_human"
+                # Run toward home/nearest building rather than just away from aggressor
+                if specimen.home:
+                    self._move_toward(specimen, specimen.home, simulation, flee_speed)
+                else:
+                    safe = self._nearest_building_point(specimen, simulation)
+                    if safe:
+                        self._move_toward(specimen, safe, simulation, flee_speed)
+                    else:
+                        nearest = min(aggressors, key=lambda a: math.dist(a.position, specimen.position))
+                        dx, dy = specimen.position[0] - nearest.position[0], specimen.position[1] - nearest.position[1]
+                        dist = math.hypot(dx, dy) or 1
+                        specimen.position = simulation.world.clamp((specimen.position[0] + dx / dist * flee_speed, specimen.position[1] + dy / dist * flee_speed))
+                specimen.current_action = "fleeing_to_safety"
         elif action == "explore":
             destination = next(zone for zone in simulation.world.zones if zone.name == "forest")
             self._move_toward(specimen, (destination.x + destination.width / 2, destination.y + destination.height / 2), simulation, 5.0 * weather_speed)
         elif action == "reproduce":
-            self._interact(specimen, simulation)
+            if specimen.gender == "woman":
+                self._interact(specimen, simulation)
+            else:
+                women = [s for s in simulation.specimens.values()
+                         if s.id != specimen.id and s.gender == "woman" and not s.pregnant
+                         and s.hunger <= 55 and s.age_hours >= 24
+                         and specimen.relationship_with(s.id) >= 30]
+                if women:
+                    target = min(women, key=lambda w: math.dist(w.position, specimen.position))
+                    self._move_toward(specimen, target.position, simulation, 4.0 * weather_speed)
+                    specimen.current_action = "seeking_partner"
         elif action == "conflict":
             self._execute_conflict(specimen, simulation, weather_speed)
         elif action == "socialize":
@@ -196,6 +222,13 @@ class BehaviorEngine:
             if simulation.world.zone_at(specimen.position) == "bar":
                 specimen.intoxicated_hours_remaining = min(3.0, specimen.intoxicated_hours_remaining + 0.04)
             self._interact(specimen, simulation)
+        elif action == "spectate_fight":
+            fights = [s for s in simulation.specimens.values()
+                      if s.id != specimen.id and s.current_action in ("fighting", "being_attacked", "retaliating")]
+            if fights:
+                target = min(fights, key=lambda s: math.dist(s.position, specimen.position))
+                self._move_toward(specimen, target.position, simulation, 3.0 * weather_speed)
+                specimen.current_action = "watching_fight"
         elif action == "theft":
             targets = [c for c in simulation.specimens.values()
                        if c.id != specimen.id and c.wallet > 15
@@ -264,7 +297,8 @@ class BehaviorEngine:
                 if c.id != specimen.id
                 and c.personality.aggression > 65
                 and math.dist(c.position, specimen.position) < detection
-                and specimen.relationship_with(c.id) < 30]
+                and c.current_action in ("fighting", "pursuing", "conflict")
+                and specimen.relationship_with(c.id) < 0]
 
     def _move_toward(self, specimen: "Specimen", target, simulation: "Simulation", speed: float) -> None:
         dx, dy = target[0] - specimen.position[0], target[1] - specimen.position[1]
@@ -378,6 +412,16 @@ class BehaviorEngine:
         detection = 55 + specimen.genetics.eyesight * 0.4
         proximity = 1 - nearest_dist / detection
         return 120 + specimen.personality.fearfulness * 0.9 + proximity * 80
+
+    def _spectate_fight_utility(self, specimen: "Specimen", simulation: "Simulation") -> float:
+        if specimen.personality.fearfulness > 65:
+            return 0
+        fights = [s for s in simulation.specimens.values()
+                  if s.id != specimen.id and s.current_action in ("fighting", "being_attacked", "retaliating")
+                  and math.dist(s.position, specimen.position) < 280]
+        if not fights:
+            return 0
+        return specimen.personality.curiosity * 0.55 + 18
 
     def _theft_utility(self, specimen: "Specimen", simulation: "Simulation") -> float:
         if specimen.reputation > 60 or specimen.personality.aggression < 50:

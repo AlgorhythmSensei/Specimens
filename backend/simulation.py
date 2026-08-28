@@ -207,7 +207,8 @@ class Simulation:
     def packet(self) -> dict:
         specimens = [specimen.to_packet() for specimen in self.specimens.values()]
         leaderboard = sorted(specimens, key=lambda specimen: specimen["points"], reverse=True)[:5]
-        return {"simulation_number": self.simulation_number, "tick": self.tick, "time_scale": self.time_scale, "time_of_day": round(self.time_of_day, 2), "is_daytime": self.is_daytime, "weather": self.weather, "day_number": int(self.elapsed_seconds / (25 * 24)) + 1, "specimens": specimens, "leaderboard": leaderboard, "behavior_analysis": [self._behavior_analysis(specimen) for specimen in sorted(self.specimens.values(), key=lambda item: item.points, reverse=True)[:5]], "death_markers": self.death_markers, "animals": [resource.to_packet() for resource in self.world.resources.values() if resource.kind == "animal"], "plants": [resource.to_packet() for resource in self.world.resources.values() if resource.kind == "plant"], "teleporter": {"x": round(self.teleporter.position[0], 1), "y": round(self.teleporter.position[1], 1), "grow_phase": round(self.teleporter.grow_phase, 3)}, "event_active": self.world.pop_up_active, "event_topic": self.world.pop_up_topic, "zones": [{"name": zone.name, "x": zone.x, "y": zone.y, "width": zone.width, "height": zone.height} for zone in self.world.zones + self.world.forest_shelters]}
+        fight_locations = [{"x": round(s.position[0], 1), "y": round(s.position[1], 1)} for s in self.specimens.values() if s.current_action in ("fighting", "being_attacked", "retaliating")]
+        return {"simulation_number": self.simulation_number, "tick": self.tick, "time_scale": self.time_scale, "time_of_day": round(self.time_of_day, 2), "is_daytime": self.is_daytime, "weather": self.weather, "day_number": int(self.elapsed_seconds / (25 * 24)) + 1, "specimens": specimens, "leaderboard": leaderboard, "behavior_analysis": [self._behavior_analysis(specimen) for specimen in sorted(self.specimens.values(), key=lambda item: item.points, reverse=True)[:5]], "death_markers": self.death_markers, "animals": [resource.to_packet() for resource in self.world.resources.values() if resource.kind == "animal"], "plants": [resource.to_packet() for resource in self.world.resources.values() if resource.kind == "plant"], "teleporter": {"x": round(self.teleporter.position[0], 1), "y": round(self.teleporter.position[1], 1), "grow_phase": round(self.teleporter.grow_phase, 3)}, "event_active": self.world.pop_up_active, "event_topic": self.world.pop_up_topic, "fight_locations": fight_locations, "zones": [{"name": zone.name, "x": zone.x, "y": zone.y, "width": zone.width, "height": zone.height} for zone in self.world.zones + self.world.forest_shelters]}
 
     def _record_death(self, position, name: str, entity_type: str, cause: str, action: str = "unknown") -> None:
         self.death_markers.append({"x": round(position[0], 1), "y": round(position[1], 1), "name": name, "entity_type": entity_type, "cause": cause, "action": action, "tick": self.tick})
@@ -280,6 +281,19 @@ class Simulation:
         for bear in [resource for resource in self.world.resources.values() if resource.species == "bear"]:
             if bear.mad_remaining_hours > 0:
                 bear.mad_remaining_hours = max(0.0, bear.mad_remaining_hours - seconds / 25)
+                if bear.mad_remaining_hours <= 0:
+                    bear.mad_target_id = -1
+            # Circle walk after mad attack
+            if bear.circle_remaining_hours > 0:
+                bear.circle_remaining_hours = max(0.0, bear.circle_remaining_hours - seconds / 25)
+                bear.circle_angle += seconds / 25 * 2 * math.pi
+                radius = 35.0
+                nx = bear.circle_center[0] + radius * math.cos(bear.circle_angle)
+                ny = bear.circle_center[1] + radius * math.sin(bear.circle_angle)
+                bear.position = (max(forest.x + 5, min(forest.x + forest.width - 5, nx)), max(forest.y + 5, min(forest.y + forest.height - 5, ny)))
+                bear.chasing = False
+                bear.current_action = "bear_circling"
+                continue
             if bear.wander_remaining_hours > 0:
                 bear.wander_remaining_hours = max(0.0, bear.wander_remaining_hours - seconds / 25)
                 bear.current_action = "bear_wandering"
@@ -294,29 +308,65 @@ class Simulation:
                 continue
             chase_range = 120
             attack_range = 30
-            nearby_resources = [resource for resource in self.world.resources.values() if resource.id != bear.id and resource.species != "bear" and resource.energy > 0 and math.dist(resource.position, bear.position) < chase_range]
-            nearby_specimens = [specimen for specimen in self.specimens.values() if math.dist(specimen.position, bear.position) < chase_range and not self.world.in_shelter(specimen.position)]
-            nearby_bears = [resource for resource in self.world.resources.values() if resource.id != bear.id and resource.species == "bear" and math.dist(resource.position, bear.position) < chase_range] if bear.mad_remaining_hours > 0 else []
-            targets = [(resource.position, resource) for resource in nearby_resources]
+            _bear_max_run = 10 / 60
+            _bear_run_threshold = _bear_max_run * 0.10
+            # Mad phase: lock onto one specific human target only, roam outside forest
             if bear.mad_remaining_hours > 0:
-                targets.extend((specimen.position, specimen) for specimen in nearby_specimens)
-                targets.extend((other.position, other) for other in nearby_bears)
-            else:
-                targets = [(position, resource) for position, resource in targets if resource.species == "deer" or resource.kind == "plant"]
-            if not targets:
-                bear.chasing = False
+                if bear.mad_target_id == -1:
+                    # Pick nearest human not inside any building zone
+                    candidates = [s for s in self.specimens.values()
+                                  if self.world.zone_at(s.position) not in ("homes", "cafe", "bar", "church", "work")
+                                  and not self.world.in_shelter(s.position)]
+                    if candidates:
+                        bear.mad_target_id = min(candidates, key=lambda s: math.dist(s.position, bear.position)).id
+                mad_target = self.specimens.get(bear.mad_target_id)
+                target_safe = mad_target and (self.world.zone_at(mad_target.position) in ("homes", "cafe", "bar", "church", "work") or self.world.in_shelter(mad_target.position))
+                if mad_target and mad_target.alive and not target_safe:
+                    distance = math.dist(mad_target.position, bear.position)
+                    if distance > attack_range:
+                        dx, dy = mad_target.position[0] - bear.position[0], mad_target.position[1] - bear.position[1]
+                        run_speed = random.uniform(35, 40)
+                        nx = bear.position[0] + dx / distance * run_speed
+                        ny = bear.position[1] + dy / distance * run_speed
+                        # Mad bears can go anywhere on the map
+                        bear.position = (max(5, min(self.world.width - 5, nx)), max(5, min(self.world.height - 5, ny)))
+                        bear.chasing = True
+                        bear.current_action = "bear_mad_chasing"
+                    else:
+                        mad_target.current_action = "attacked_by_mad_bear"
+                        self._record_death(mad_target.position, mad_target.name, "human", "mad_bear_attack", "bear_mad_attack")
+                        mad_target.alive = False
+                        bear.mad_remaining_hours = 0.0
+                        bear.mad_target_id = -1
+                        bear.chasing = False
+                        bear.circle_remaining_hours = 1.0
+                        bear.circle_center = bear.position
+                        bear.circle_angle = random.uniform(0, 2 * math.pi)
+                        bear.current_action = "bear_circling"
+                else:
+                    # Target went into safety — pick a new one or give up
+                    bear.mad_target_id = -1
+                    new_candidates = [s for s in self.specimens.values()
+                                      if self.world.zone_at(s.position) not in ("homes", "cafe", "bar", "church", "work")
+                                      and not self.world.in_shelter(s.position)]
+                    if new_candidates:
+                        bear.mad_target_id = min(new_candidates, key=lambda s: math.dist(s.position, bear.position)).id
+                    else:
+                        bear.mad_remaining_hours = 0.0
+                        bear.chasing = False
                 continue
+            # Normal hunting logic — bears only hunt when >50% hungry (energy < 50% of max)
+            bear_hungry = bear.energy < bear.max_energy * 0.5
+            nearby_resources = [resource for resource in self.world.resources.values() if resource.id != bear.id and resource.species != "bear" and resource.energy > 0 and math.dist(resource.position, bear.position) < chase_range]
+            targets = [(position, resource) for position, resource in [(r.position, r) for r in nearby_resources] if resource.species == "deer" or resource.kind == "plant"]
             fed_recently = (bear.age_hours - bear.last_fed_hours) < 8
-            non_meal_targets = [(pos, t) for pos, t in targets if t.kind == "plant" or getattr(t, "species", None) == "bear"]
-            if fed_recently:
-                targets = non_meal_targets
+            if fed_recently or not bear_hungry:
+                targets = [(pos, t) for pos, t in targets if t.kind == "plant"]
             if not targets:
                 bear.chasing = False
                 continue
             target_pos, target = min(targets, key=lambda item: math.dist(item[0], bear.position))
             distance = math.dist(target_pos, bear.position)
-            _bear_max_run = 10 / 60
-            _bear_run_threshold = _bear_max_run * 0.10
             if distance > attack_range:
                 if bear.run_remaining_hours > _bear_run_threshold:
                     dx, dy = target_pos[0] - bear.position[0], target_pos[1] - bear.position[1]
@@ -333,23 +383,14 @@ class Simulation:
                     bear.current_action = "bear_roaming"
                 continue
             bear.chasing = False
-            if isinstance(target, Specimen):
-                target.current_action = "attacked_by_bear"
-                self._record_death(target.position, target.name, "human", "bear_attack", target.current_action)
-                target.alive = False
-                bear.last_fed_hours = bear.age_hours
-                bear.sleeping = True
-                bear.sleep_remaining = 3.0 * 25
-                bear.current_action = "bear_sleeping_after_meal"
-            elif getattr(target, "species", None) == "bear":
-                self._record_death(target.position, "Bear", "animal", "bear_fight", "fighting")
-                self.world.resources.pop(target.id, None)
-                bear.current_action = "bear_fighting"
-            elif target.kind == "plant":
+            if target.kind == "plant":
                 was_poisonous = target.poisonous
                 self.world.resources.pop(target.id, None)
-                if was_poisonous and bear.mad_remaining_hours <= 0:
+                if was_poisonous:
                     bear.mad_remaining_hours = 0.5
+                    candidates = [s for s in self.specimens.values() if not self.world.in_shelter(s.position)]
+                    if candidates:
+                        bear.mad_target_id = min(candidates, key=lambda s: math.dist(s.position, bear.position)).id
                 bear.current_action = "bear_ate_poisonous_plant" if was_poisonous else "bear_eating_plant"
             else:
                 self.world.resources.pop(target.id, None)
@@ -424,6 +465,7 @@ class Simulation:
                 forest = next(zone for zone in self.world.zones if zone.name == "forest")
                 position = (max(forest.x + 5, min(forest.x + forest.width - 5, position[0])), max(forest.y + 5, min(forest.y + forest.height - 5, position[1])))
                 self.world.resources[fawn_id] = ForestResource(fawn_id, "animal", position, 28, species="deer")
+                deer.current_action = "deer_mating"
 
     def _next_animal_id(self) -> int:
         next_id = max(self.world.resources.keys(), default=0) + 1
