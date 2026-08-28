@@ -13,9 +13,9 @@ def test_simulation_packet_has_world_state():
     assert all(specimen["name"] for specimen in packet["specimens"])
     forest = next(zone for zone in packet["zones"] if zone["name"] == "forest")
     assert (forest["x"], forest["y"], forest["width"], forest["height"]) == (750, 0, 250, 1000)
-    assert len(packet["animals"]) == 18
+    assert len(packet["animals"]) == 16
     assert sum(animal["species"] == "deer" for animal in packet["animals"]) == 14
-    assert sum(animal["species"] == "bear" for animal in packet["animals"]) == 4
+    assert sum(animal["species"] == "bear" for animal in packet["animals"]) == 2
     assert len(packet["plants"]) == 40
 
 
@@ -101,7 +101,7 @@ def test_reset_starts_a_new_numbered_simulation():
     assert simulation.packet()["simulation_number"] == 2
     assert simulation.packet()["tick"] == 0
     assert len(simulation.packet()["plants"]) == 40
-    assert len(simulation.packet()["animals"]) == 18
+    assert len(simulation.packet()["animals"]) == 16
     assert all(resource["energy"] > 0 for resource in simulation.packet()["plants"])
 
 

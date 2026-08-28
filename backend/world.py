@@ -137,7 +137,7 @@ class World:
             position = (random.uniform(forest.x + 8, forest.x + forest.width - 8), random.uniform(forest.y + 8, forest.y + forest.height - 8))
             self.resources[self._next_resource_id] = ForestResource(self._next_resource_id, "animal", position, 28, species="deer")
             self._next_resource_id += 1
-        for _ in range(4):
+        for _ in range(2):
             position = (random.uniform(forest.x + 12, forest.x + forest.width - 12), random.uniform(forest.y + 12, forest.y + forest.height - 12))
             self.resources[self._next_resource_id] = ForestResource(self._next_resource_id, "animal", position, 60, species="bear")
             self._next_resource_id += 1
