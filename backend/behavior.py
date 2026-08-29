@@ -375,7 +375,7 @@ class BehaviorEngine:
         return max(0, trait_value - 40) * 1.8
 
     def _work_utility(self, specimen: "Specimen", simulation: "Simulation") -> float:
-        if not specimen.has_job or not simulation.is_daytime or specimen.age_hours < 48:
+        if not specimen.has_job or not simulation.is_daytime or specimen.age_hours < 48 or not simulation.is_weekday:
             return 0
         tod = simulation.time_of_day
         if not (specimen.work_start <= tod < specimen.work_end):

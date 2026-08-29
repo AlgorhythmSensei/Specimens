@@ -53,6 +53,10 @@ class Simulation:
     def day_of_week(self) -> int:
         return int(self.elapsed_seconds / (25 * 24)) % 7
 
+    @property
+    def is_weekday(self) -> bool:
+        return self.day_of_week < 5
+
     def set_scenario(self, name: str, intensity: int = 100) -> None:
         self.active_scenario = name if name in SCENARIOS else "balanced"
         self._scenario_intensity = max(1, min(100, intensity))
@@ -260,7 +264,7 @@ class Simulation:
         all_resources = list(self.world.resources.values())
         animals = [r for r in all_resources if r.kind == "animal"]
         plants = [r for r in all_resources if r.kind == "plant"]
-        return {"simulation_number": self.simulation_number, "tick": self.tick, "time_scale": self.time_scale, "running": self.running, "active_scenario": self.active_scenario, "time_of_day": round(self.time_of_day, 2), "is_daytime": self.is_daytime, "weather": self.weather, "day_number": int(self.elapsed_seconds / (25 * 24)) + 1, "specimens": specimens, "leaderboard": leaderboard, "behavior_analysis": [self._behavior_analysis(specimen) for specimen in sorted(self.specimens.values(), key=lambda item: item.points, reverse=True)[:5]], "death_markers": self.death_markers, "animals": [r.to_packet() for r in animals], "plants": [r.to_packet() for r in plants], "deer_count": sum(1 for r in animals if r.species == "deer"), "bear_count": sum(1 for r in animals if r.species == "bear"), "plant_count": sum(1 for r in plants if not r.poisonous), "poisonous_plant_count": sum(1 for r in plants if r.poisonous), "teleporter": {"x": round(self.teleporter.position[0], 1), "y": round(self.teleporter.position[1], 1), "grow_phase": round(self.teleporter.grow_phase, 3)}, "event_active": self.world.pop_up_active, "event_topic": self.world.pop_up_topic, "fight_locations": fight_locations, "reclamation_active": self.reclamation_active, "forest_coverage": round(self.world.forest_coverage, 3), "game_over": self.game_over, "zones": [{"name": zone.name, "x": zone.x, "y": zone.y, "width": zone.width, "height": zone.height} for zone in self.world.zones + self.world.forest_shelters]}
+        return {"simulation_number": self.simulation_number, "tick": self.tick, "time_scale": self.time_scale, "running": self.running, "active_scenario": self.active_scenario, "time_of_day": round(self.time_of_day, 2), "is_daytime": self.is_daytime, "is_weekday": self.is_weekday, "weather": self.weather, "day_number": int(self.elapsed_seconds / (25 * 24)) + 1, "specimens": specimens, "leaderboard": leaderboard, "behavior_analysis": [self._behavior_analysis(specimen) for specimen in sorted(self.specimens.values(), key=lambda item: item.points, reverse=True)[:5]], "death_markers": self.death_markers, "animals": [r.to_packet() for r in animals], "plants": [r.to_packet() for r in plants], "deer_count": sum(1 for r in animals if r.species == "deer"), "bear_count": sum(1 for r in animals if r.species == "bear"), "plant_count": sum(1 for r in plants if not r.poisonous), "poisonous_plant_count": sum(1 for r in plants if r.poisonous), "teleporter": {"x": round(self.teleporter.position[0], 1), "y": round(self.teleporter.position[1], 1), "grow_phase": round(self.teleporter.grow_phase, 3)}, "event_active": self.world.pop_up_active, "event_topic": self.world.pop_up_topic, "fight_locations": fight_locations, "reclamation_active": self.reclamation_active, "forest_coverage": round(self.world.forest_coverage, 3), "game_over": self.game_over, "zones": [{"name": zone.name, "x": zone.x, "y": zone.y, "width": zone.width, "height": zone.height} for zone in self.world.zones + self.world.forest_shelters]}
 
     def _record_death(self, position, name: str, entity_type: str, cause: str, action: str = "unknown") -> None:
         self.death_markers.append({"x": round(position[0], 1), "y": round(position[1], 1), "name": name, "entity_type": entity_type, "cause": cause, "action": action, "tick": self.tick})
