@@ -14,14 +14,20 @@ from .llm import generate_commentary, generate_analysis, generate_optimal_traits
 
 simulation = Simulation()
 clients: set[WebSocket] = set()
+_sim_task: asyncio.Task | None = None
+
+
+def _new_simulation() -> Simulation:
+    return Simulation()
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    task = asyncio.create_task(simulation.run())
+    global simulation, _sim_task
+    _sim_task = asyncio.create_task(simulation.run())
     broadcast_task = asyncio.create_task(broadcaster())
     yield
-    task.cancel()
+    _sim_task.cancel()
     broadcast_task.cancel()
 
 
@@ -52,7 +58,6 @@ async def optimise():
 
 @app.post("/api/read-minds")
 async def read_minds():
-    """Gemini inner thoughts for the 4 most interesting live specimens."""
     packet = simulation.packet()
     specimens = packet.get("specimens", [])
     interesting = [s for s in specimens if s["action"] not in ("wander", "sleep", "work")][:4]
@@ -76,7 +81,6 @@ async def read_minds():
 
 @app.post("/api/field-notes")
 async def field_notes():
-    """Groq world-observer sentence for the current snapshot."""
     packet = simulation.packet()
     specimens = packet.get("specimens", [])
     tod = packet.get("time_of_day", 12)
@@ -98,6 +102,7 @@ async def field_notes():
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
+    global simulation, _sim_task
     await websocket.accept()
     clients.add(websocket)
     try:
@@ -106,7 +111,17 @@ async def websocket_endpoint(websocket: WebSocket):
             if message == "toggle":
                 simulation.running = not simulation.running
             elif message == "reset":
-                simulation.reset_population()
+                # Hard reboot: kill the old sim task, replace with a fresh Simulation
+                if _sim_task and not _sim_task.done():
+                    _sim_task.cancel()
+                    try:
+                        await _sim_task
+                    except asyncio.CancelledError:
+                        pass
+                sim_number = simulation.simulation_number + 1
+                simulation = _new_simulation()
+                simulation.simulation_number = sim_number
+                _sim_task = asyncio.create_task(simulation.run())
             else:
                 try:
                     command = json.loads(message)
