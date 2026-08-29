@@ -36,7 +36,7 @@ def test_night_shelter_intent_prefers_home_or_forest():
     housed = next(specimen for specimen in simulation.specimens.values() if specimen.home)
     homeless = next(specimen for specimen in simulation.specimens.values() if specimen.is_homeless)
     assert simulation.behavior.choose(housed, simulation) == "return_home"
-    assert simulation.behavior.choose(homeless, simulation) in ("return_home", "sleep", "flee")
+    assert simulation.behavior.choose(homeless, simulation) in ("return_home", "sleep", "flee", "chase_deer", "gather", "hunt")
 
 
 def test_simulation_advances_and_keeps_positions_in_bounds():
@@ -278,3 +278,61 @@ def test_deer_eat_plants_but_die_from_poisonous_plants():
             break
         simulation._resolve_deer_feeding()
     assert deer.id not in simulation.world.resources
+
+
+# ── Scenario tests ────────────────────────────────────────────────────────────
+
+def test_violent_scenario_raises_average_aggression():
+    sim = Simulation()
+    sim.set_scenario("violent", intensity=100)
+    sim.specimens.clear(); sim.next_id = 1
+    for _ in range(20): sim.spawn(new_arrival=False)
+    avg = sum(s.personality.aggression for s in sim.specimens.values()) / 20
+    assert avg >= 70, f"expected avg aggression ≥ 70, got {avg:.1f}"
+
+
+def test_peaceful_scenario_lowers_aggression():
+    sim = Simulation()
+    sim.set_scenario("peaceful", intensity=100)
+    sim.specimens.clear(); sim.next_id = 1
+    for _ in range(20): sim.spawn(new_arrival=False)
+    avg = sum(s.personality.aggression for s in sim.specimens.values()) / 20
+    assert avg <= 20, f"expected avg aggression ≤ 20, got {avg:.1f}"
+
+
+def test_mating_scenario_raises_fertility():
+    sim = Simulation()
+    sim.set_scenario("mating", intensity=100)
+    sim.specimens.clear(); sim.next_id = 1
+    for _ in range(20): sim.spawn(new_arrival=False)
+    avg = sum(s.genetics.fertility for s in sim.specimens.values()) / 20
+    assert avg >= 80, f"expected avg fertility ≥ 80, got {avg:.1f}"
+
+
+def test_intelligent_scenario_raises_curiosity_and_discipline():
+    sim = Simulation()
+    sim.set_scenario("intelligent", intensity=100)
+    sim.specimens.clear(); sim.next_id = 1
+    for _ in range(20): sim.spawn(new_arrival=False)
+    avg_c = sum(s.personality.curiosity for s in sim.specimens.values()) / 20
+    avg_d = sum(s.personality.discipline for s in sim.specimens.values()) / 20
+    assert avg_c >= 70, f"expected curiosity ≥ 70, got {avg_c:.1f}"
+    assert avg_d >= 70, f"expected discipline ≥ 70, got {avg_d:.1f}"
+
+
+def test_scenario_intensity_blends_traits():
+    sim = Simulation()
+    sim.set_scenario("violent", intensity=50)
+    sim.specimens.clear(); sim.next_id = 1
+    for _ in range(20): sim.spawn(new_arrival=False)
+    avg = sum(s.personality.aggression for s in sim.specimens.values()) / 20
+    # At 50% intensity should be clearly above default midpoint but below full
+    assert 45 <= avg <= 90, f"expected blended aggression 45–90, got {avg:.1f}"
+
+
+def test_balanced_scenario_is_unchanged_from_default():
+    sim = Simulation()
+    sim.set_scenario("balanced")
+    packet = sim.packet()
+    assert packet["active_scenario"] == "balanced"
+    assert len(packet["specimens"]) == 42

@@ -8,6 +8,7 @@ from typing import Dict, Optional
 from .behavior import BehaviorEngine
 from .death import cause_of_death
 from .reproduction import attempt_copulation, attempt_birth
+from .scenarios import SCENARIOS, apply_scenario
 from .specimen import Specimen
 from .teleporter import Teleporter
 from .world import World, ForestResource
@@ -33,6 +34,10 @@ class Simulation:
         self._weather_remaining: float = 0.0
         self.reclamation_active: bool = False
         self.game_over: bool = False
+        self.active_scenario: str = "balanced"
+        self._scenario_intensity: int = 100
+        self._personality_ranges: dict = {}
+        self._genetics_ranges: dict = {}
         for _ in range(42):
             self.spawn(new_arrival=False)
 
@@ -48,6 +53,11 @@ class Simulation:
     def day_of_week(self) -> int:
         return int(self.elapsed_seconds / (25 * 24)) % 7
 
+    def set_scenario(self, name: str, intensity: int = 100) -> None:
+        self.active_scenario = name if name in SCENARIOS else "balanced"
+        self._scenario_intensity = max(1, min(100, intensity))
+        self._personality_ranges, self._genetics_ranges = apply_scenario(self.active_scenario, self._scenario_intensity)
+
     def spawn(self, new_arrival: bool = True) -> Specimen:
         home = self.world.apartments[self.next_id - 1] if self.next_id <= len(self.world.apartments) else None
         position = home or (random.uniform(30, 970), random.uniform(30, 970))
@@ -55,6 +65,16 @@ class Simulation:
         specimen.name = f"{random_name(specimen.gender)}"
         specimen.max_age_hours = random.uniform(120, 300)
         specimen.new_arrival = new_arrival
+        # Apply scenario trait overrides
+        from dataclasses import fields as dc_fields
+        for f in dc_fields(specimen.personality):
+            if f.name in self._personality_ranges:
+                lo, hi = self._personality_ranges[f.name]
+                setattr(specimen.personality, f.name, random.randint(lo, hi))
+        for f in dc_fields(specimen.genetics):
+            if f.name in self._genetics_ranges:
+                lo, hi = self._genetics_ranges[f.name]
+                setattr(specimen.genetics, f.name, random.randint(lo, hi))
         _assign_job(specimen)
         self.specimens[specimen.id] = specimen
         self.next_id += 1
@@ -224,7 +244,7 @@ class Simulation:
         specimens = [specimen.to_packet() for specimen in self.specimens.values()]
         leaderboard = sorted(specimens, key=lambda specimen: specimen["points"], reverse=True)[:5]
         fight_locations = [{"x": round(s.position[0], 1), "y": round(s.position[1], 1)} for s in self.specimens.values() if s.current_action in ("fighting", "being_attacked", "retaliating")]
-        return {"simulation_number": self.simulation_number, "tick": self.tick, "time_scale": self.time_scale, "running": self.running, "time_of_day": round(self.time_of_day, 2), "is_daytime": self.is_daytime, "weather": self.weather, "day_number": int(self.elapsed_seconds / (25 * 24)) + 1, "specimens": specimens, "leaderboard": leaderboard, "behavior_analysis": [self._behavior_analysis(specimen) for specimen in sorted(self.specimens.values(), key=lambda item: item.points, reverse=True)[:5]], "death_markers": self.death_markers, "animals": [resource.to_packet() for resource in self.world.resources.values() if resource.kind == "animal"], "plants": [resource.to_packet() for resource in self.world.resources.values() if resource.kind == "plant"], "teleporter": {"x": round(self.teleporter.position[0], 1), "y": round(self.teleporter.position[1], 1), "grow_phase": round(self.teleporter.grow_phase, 3)}, "event_active": self.world.pop_up_active, "event_topic": self.world.pop_up_topic, "fight_locations": fight_locations, "reclamation_active": self.reclamation_active, "forest_coverage": round(self.world.forest_coverage, 3), "game_over": self.game_over, "zones": [{"name": zone.name, "x": zone.x, "y": zone.y, "width": zone.width, "height": zone.height} for zone in self.world.zones + self.world.forest_shelters]}
+        return {"simulation_number": self.simulation_number, "tick": self.tick, "time_scale": self.time_scale, "running": self.running, "active_scenario": self.active_scenario, "time_of_day": round(self.time_of_day, 2), "is_daytime": self.is_daytime, "weather": self.weather, "day_number": int(self.elapsed_seconds / (25 * 24)) + 1, "specimens": specimens, "leaderboard": leaderboard, "behavior_analysis": [self._behavior_analysis(specimen) for specimen in sorted(self.specimens.values(), key=lambda item: item.points, reverse=True)[:5]], "death_markers": self.death_markers, "animals": [resource.to_packet() for resource in self.world.resources.values() if resource.kind == "animal"], "plants": [resource.to_packet() for resource in self.world.resources.values() if resource.kind == "plant"], "teleporter": {"x": round(self.teleporter.position[0], 1), "y": round(self.teleporter.position[1], 1), "grow_phase": round(self.teleporter.grow_phase, 3)}, "event_active": self.world.pop_up_active, "event_topic": self.world.pop_up_topic, "fight_locations": fight_locations, "reclamation_active": self.reclamation_active, "forest_coverage": round(self.world.forest_coverage, 3), "game_over": self.game_over, "zones": [{"name": zone.name, "x": zone.x, "y": zone.y, "width": zone.width, "height": zone.height} for zone in self.world.zones + self.world.forest_shelters]}
 
     def _record_death(self, position, name: str, entity_type: str, cause: str, action: str = "unknown") -> None:
         self.death_markers.append({"x": round(position[0], 1), "y": round(position[1], 1), "name": name, "entity_type": entity_type, "cause": cause, "action": action, "tick": self.tick})

@@ -10,6 +10,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from .simulation import Simulation
+from .scenarios import SCENARIOS
 from .llm import generate_commentary, generate_analysis, generate_optimal_traits, specimen_think
 
 simulation = Simulation()
@@ -44,6 +45,20 @@ async def index():
 @app.get("/api/status")
 async def status():
     return simulation.packet()
+
+
+@app.get("/api/scenarios")
+async def get_scenarios():
+    return {k: {"label": v["label"], "description": v["description"]} for k, v in SCENARIOS.items()}
+
+
+@app.post("/api/purge")
+async def purge():
+    """Instantly kills all specimens and triggers game_over state."""
+    simulation.specimens.clear()
+    simulation.game_over = True
+    simulation.reclamation_active = True
+    return {"status": "purged"}
 
 
 @app.post("/api/analyse")
@@ -108,10 +123,17 @@ async def websocket_endpoint(websocket: WebSocket):
     try:
         while True:
             message = await websocket.receive_text()
+            try:
+                command = json.loads(message)
+            except json.JSONDecodeError:
+                command = {}
+            cmd_type = command.get("type") if isinstance(command, dict) else message
+
             if message == "toggle":
                 simulation.running = not simulation.running
-            elif message == "reset":
-                # Hard reboot: kill the old sim task, replace with a fresh Simulation
+            elif message == "reset" or cmd_type == "reset_scenario":
+                scenario = command.get("scenario", "balanced") if cmd_type == "reset_scenario" else "balanced"
+                intensity = int(command.get("intensity", 100)) if cmd_type == "reset_scenario" else 100
                 if _sim_task and not _sim_task.done():
                     _sim_task.cancel()
                     try:
@@ -121,18 +143,14 @@ async def websocket_endpoint(websocket: WebSocket):
                 sim_number = simulation.simulation_number + 1
                 simulation = _new_simulation()
                 simulation.simulation_number = sim_number
+                simulation.set_scenario(scenario, intensity)
                 _sim_task = asyncio.create_task(simulation.run())
-            else:
-                try:
-                    command = json.loads(message)
-                except json.JSONDecodeError:
-                    command = {}
-                if command.get("type") == "add_specimen":
-                    simulation.add_specimen(command.get("values", {}))
-                elif command.get("type") == "wake_specimen":
-                    simulation.wake_specimen(int(command.get("id", 0)))
-                elif command.get("type") == "set_speed":
-                    simulation.time_scale = max(0.25, min(10000.0, float(command.get("speed", 1.0))))
+            elif cmd_type == "add_specimen":
+                simulation.add_specimen(command.get("values", {}))
+            elif cmd_type == "wake_specimen":
+                simulation.wake_specimen(int(command.get("id", 0)))
+            elif cmd_type == "set_speed":
+                simulation.time_scale = max(0.25, min(10000.0, float(command.get("speed", 1.0))))
             await websocket.send_text(json.dumps({"type": "command_ack", "running": simulation.running}))
     except WebSocketDisconnect:
         clients.discard(websocket)

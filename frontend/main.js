@@ -9,6 +9,7 @@ let priorPacket = null;
 let currentSimulationNumber = null;
 let packetReceivedAt = performance.now();
 let animationFrame = 0;
+let purgeFrame = 0;
 let hoveredId = null;
 let hoveredDeathMarker = null;
 let selectedId = null;
@@ -132,7 +133,15 @@ function render(packet) {
     if (specimen.id === focusedId) { const pulse = Math.sin(animationFrame / 6) * 3; ctx.beginPath(); ctx.arc(specimen.x, specimen.y, radius + 13 + pulse, 0, Math.PI * 2); ctx.strokeStyle = specimen.id === selectedId ? '#54a66d' : '#19231f'; ctx.lineWidth = 3; ctx.stroke(); ctx.beginPath(); ctx.moveTo(specimen.x - radius - 18, specimen.y); ctx.lineTo(specimen.x - radius - 7, specimen.y); ctx.moveTo(specimen.x + radius + 7, specimen.y); ctx.lineTo(specimen.x + radius + 18, specimen.y); ctx.moveTo(specimen.x, specimen.y - radius - 18); ctx.lineTo(specimen.x, specimen.y - radius - 7); ctx.moveTo(specimen.x, specimen.y + radius + 7); ctx.lineTo(specimen.x, specimen.y + radius + 18); ctx.strokeStyle = specimen.id === selectedId ? '#54a66d' : '#19231f'; ctx.stroke(); ctx.font = '600 13px DM Mono'; ctx.fillStyle = specimen.id === selectedId ? '#54a66d' : '#19231f'; ctx.fillText(specimen.name, specimen.x + radius + 22, specimen.y + 4); }
     if (specimen.id === selectedId) { ctx.beginPath(); ctx.arc(specimen.x, specimen.y, radius + 19 + Math.sin(animationFrame / 4) * 4, 0, Math.PI * 2); ctx.strokeStyle = '#54a66d'; ctx.globalAlpha = 0.45 + (Math.sin(animationFrame / 4) + 1) * 0.2; ctx.lineWidth = 4; ctx.stroke(); ctx.globalAlpha = 1; }
   });
-  if (packet.game_over) { ctx.fillStyle = 'rgba(30,70,30,0.82)'; ctx.fillRect(0, 0, 1000, 1000); ctx.font = '700 64px DM Mono'; ctx.fillStyle = '#9bbd91'; ctx.textAlign = 'center'; ctx.fillText('NATURE WINS', 500, 420); ctx.font = '500 22px DM Mono'; ctx.fillStyle = '#d9f264'; ctx.fillText('The forest reclaimed the world.', 500, 480); ctx.font = '400 16px DM Mono'; ctx.fillStyle = '#9bbd91'; ctx.fillText('Reset to begin a new simulation.', 500, 520); ctx.textAlign = 'left'; } else if (packet.reclamation_active) { const cov = packet.forest_coverage || 0; ctx.fillStyle = `rgba(30,70,30,${Math.min(0.55, cov * 0.7)})`; ctx.fillRect(0, 0, 1000, 1000); ctx.font = '700 28px DM Mono'; ctx.fillStyle = '#9bbd91'; ctx.textAlign = 'center'; ctx.fillText(`NATURE RECLAIMS — ${Math.round(cov * 100)}%`, 500, 500); ctx.textAlign = 'left'; }
+  if (packet.game_over && purgeFrame > 0) {
+    const p = Math.min(1, (animationFrame - purgeFrame) / 80);
+    const r = Math.round(180 + 60 * p), g = Math.round(40 * (1 - p)), b = 0;
+    ctx.fillStyle = `rgba(${r},${g},${b},${0.4 + p * 0.55})`; ctx.fillRect(0, 0, 1000, 1000);
+    for (let i = 0; i < 18 * p; i++) { const bx = Math.sin(animationFrame * 0.07 + i * 1.7) * 480 + 500; const by = Math.cos(animationFrame * 0.05 + i * 2.1) * 480 + 500; const br = 6 + Math.sin(animationFrame * 0.1 + i) * 4; ctx.beginPath(); ctx.arc(bx, by, br, 0, Math.PI * 2); ctx.fillStyle = `rgba(255,${Math.round(100 + 60 * Math.random())},0,${0.6 + Math.random() * 0.4})`; ctx.fill(); }
+    ctx.font = `700 ${Math.round(48 + p * 24)}px DM Mono`; ctx.fillStyle = `rgba(255,200,0,${p})`; ctx.textAlign = 'center'; ctx.fillText('⚡ PURGED ⚡', 500, 420);
+    ctx.font = '500 20px DM Mono'; ctx.fillStyle = `rgba(255,100,0,${p})`; ctx.fillText('The world was destroyed.', 500, 480);
+    ctx.font = '400 14px DM Mono'; ctx.fillStyle = `rgba(255,200,0,${p * 0.8})`; ctx.fillText('Reset to rebuild civilisation.', 500, 516); ctx.textAlign = 'left';
+  } else if (packet.game_over) { ctx.fillStyle = 'rgba(30,70,30,0.82)'; ctx.fillRect(0, 0, 1000, 1000); ctx.font = '700 64px DM Mono'; ctx.fillStyle = '#9bbd91'; ctx.textAlign = 'center'; ctx.fillText('NATURE WINS', 500, 420); ctx.font = '500 22px DM Mono'; ctx.fillStyle = '#d9f264'; ctx.fillText('The forest reclaimed the world.', 500, 480); ctx.font = '400 16px DM Mono'; ctx.fillStyle = '#9bbd91'; ctx.fillText('Reset to begin a new simulation.', 500, 520); ctx.textAlign = 'left'; } else if (packet.reclamation_active) { const cov = packet.forest_coverage || 0; ctx.fillStyle = `rgba(30,70,30,${Math.min(0.55, cov * 0.7)})`; ctx.fillRect(0, 0, 1000, 1000); ctx.font = '700 28px DM Mono'; ctx.fillStyle = '#9bbd91'; ctx.textAlign = 'center'; ctx.fillText(`NATURE RECLAIMS — ${Math.round(cov * 100)}%`, 500, 500); ctx.textAlign = 'left'; }
   const simDay = packet.day_number || 1; const dayNames = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun']; const dayName = dayNames[(simDay - 1) % 7];
   const hh = String(Math.floor(liveTimeOfDay)).padStart(2, '0'); const mm = String(Math.floor(liveTimeOfDay % 1 * 60)).padStart(2, '0');
   document.querySelector('#population').textContent = packet.specimens.length; document.querySelector('#homeless').textContent = packet.specimens.filter(s => s.is_homeless).length; document.querySelector('#tick').textContent = packet.tick.toLocaleString(); document.querySelector('#clock').textContent = `${dayName}  ${hh}:${mm}`; document.querySelector('#phase').textContent = liveTimeOfDay >= 6 && liveTimeOfDay < 18 ? 'DAYLIGHT' : 'NIGHT';
@@ -292,14 +301,47 @@ document.querySelector('#pause').onclick = event => {
     statusEl.classList.remove('connected');
   }
 };
-document.querySelector('#reset').onclick = () => {
-  window.simSocket?.send('reset');
+// ── Reset / Scenario dialog ──────────────────────────────────────────────────
+let selectedScenario = 'balanced';
+const resetDialog = document.querySelector('#reset-dialog');
+
+document.querySelector('#reset').onclick = async () => {
+  const cardsEl = document.querySelector('#scenario-cards');
+  cardsEl.innerHTML = '<div style="font:11px DM Mono,monospace;color:var(--muted)">Loading scenarios…</div>';
+  resetDialog.showModal();
+  try {
+    const res = await fetch('/api/scenarios');
+    const scenarios = await res.json();
+    selectedScenario = 'balanced';
+    cardsEl.innerHTML = Object.entries(scenarios).map(([key, s]) => `
+      <button class="scenario-card${key === 'balanced' ? ' selected' : ''}" data-key="${key}">
+        <b>${s.label}</b>
+        <p>${s.description}</p>
+      </button>`).join('');
+    cardsEl.querySelectorAll('.scenario-card').forEach(card => {
+      card.onclick = () => {
+        cardsEl.querySelectorAll('.scenario-card').forEach(c => c.classList.remove('selected'));
+        card.classList.add('selected');
+        selectedScenario = card.dataset.key;
+      };
+    });
+  } catch (e) {
+    cardsEl.innerHTML = `<p style="color:var(--orange)">${e.message}</p>`;
+  }
+};
+document.querySelector('#close-reset').onclick = () => resetDialog.close();
+document.querySelector('#intensity-slider').oninput = e => {
+  document.querySelector('#intensity-value').value = e.target.value;
+};
+document.querySelector('#launch-scenario').onclick = () => {
+  const intensity = Number(document.querySelector('#intensity-slider').value);
+  window.simSocket?.send(JSON.stringify({ type: 'reset_scenario', scenario: selectedScenario, intensity }));
   state.running = true;
   document.querySelector('#pause').textContent = 'Pause simulation';
-  const dot = document.querySelector('#connection-dot');
-  dot.style.background = '';
+  document.querySelector('#connection-dot').style.background = '';
   document.querySelector('#connection').textContent = 'LIVE';
   document.querySelector('.status').classList.add('connected');
+  resetDialog.close();
 };
 const speedSlider = document.querySelector('#speed-slider');
 const speedDisplay = document.querySelector('#speed-display');
@@ -319,6 +361,11 @@ document.querySelector('#add-form').addEventListener('submit', event => {
   window.simSocket?.send(JSON.stringify({ type: 'add_specimen', values }));
   document.querySelector('#add-dialog').close();
 });
+document.querySelector('#purge-btn').onclick = async () => {
+  purgeFrame = animationFrame + 1;
+  await fetch('/api/purge', { method: 'POST' });
+};
+
 document.querySelector('#field-notes-btn').onclick = async () => {
   const btn = document.querySelector('#field-notes-btn');
   const commentaryEl = document.querySelector('#ai-commentary');
