@@ -155,13 +155,97 @@ function render(packet) {
     if (specimen.id === selectedId) { ctx.beginPath(); ctx.arc(specimen.x, specimen.y, radius + 19 + Math.sin(animationFrame / 4) * 4, 0, Math.PI * 2); ctx.strokeStyle = '#54a66d'; ctx.globalAlpha = 0.45 + (Math.sin(animationFrame / 4) + 1) * 0.2; ctx.lineWidth = 4; ctx.stroke(); ctx.globalAlpha = 1; }
   });
   if (packet.game_over && purgeFrame > 0) {
-    const p = Math.min(1, Math.max(0, (animationFrame - purgeFrame) / 80));
-    const r = Math.round(180 + 60 * p), g = Math.round(40 * (1 - p)), b = 0;
-    ctx.fillStyle = `rgba(${r},${g},${b},${0.4 + p * 0.55})`; ctx.fillRect(0, 0, 1000, 1000);
-    for (let i = 0; i < 18 * p; i++) { const bx = Math.sin(animationFrame * 0.07 + i * 1.7) * 480 + 500; const by = Math.cos(animationFrame * 0.05 + i * 2.1) * 480 + 500; const br = 6 + Math.sin(animationFrame * 0.1 + i) * 4; ctx.beginPath(); ctx.arc(bx, by, br, 0, Math.PI * 2); ctx.fillStyle = `rgba(255,${Math.round(100 + 60 * Math.random())},0,${0.6 + Math.random() * 0.4})`; ctx.fill(); }
-    ctx.font = `700 ${Math.round(48 + p * 24)}px DM Mono`; ctx.fillStyle = `rgba(255,200,0,${p})`; ctx.textAlign = 'center'; ctx.fillText('⚡ PURGED ⚡', 500, 420);
-    ctx.font = '500 20px DM Mono'; ctx.fillStyle = `rgba(255,100,0,${p})`; ctx.fillText('The world was destroyed.', 500, 480);
-    ctx.font = '400 14px DM Mono'; ctx.fillStyle = `rgba(255,200,0,${p * 0.8})`; ctx.fillText('Reset to rebuild civilisation.', 500, 516); ctx.textAlign = 'left';
+    const age = animationFrame - purgeFrame;
+    const fireIn   = Math.min(1, age / 50);
+    const firePeak = Math.min(1, age / 160);
+    const fireOut  = Math.max(0, Math.min(1, (age - 220) / 130));
+    const greenIn  = Math.max(0, Math.min(1, (age - 320) / 220));
+    const fireAmt  = firePeak * (1 - fireOut * 0.92);
+
+    // charred ground
+    ctx.fillStyle = `rgba(15,8,3,${fireAmt * 0.75})`; ctx.fillRect(0, 0, 1000, 1000);
+    // sky glow
+    ctx.fillStyle = `rgba(210,45,0,${fireAmt * 0.55})`; ctx.fillRect(0, 0, 1000, 1000);
+
+    // fire columns
+    const cols = [70, 165, 275, 390, 510, 630, 750, 870, 960];
+    cols.forEach((fx, ci) => {
+      const fh = (280 + Math.sin(ci * 1.8 + 0.5) * 100) * fireAmt;
+      for (let y = 0; y < fh; y += 5) {
+        const t = y / fh;
+        const wx = fx + Math.sin(animationFrame * 0.14 + ci * 1.6 + y * 0.025) * 22 * (1 - t * 0.4);
+        const hw = (1 - t) * 42 + 6;
+        const green = Math.round(200 * (1 - t * 0.85));
+        ctx.beginPath(); ctx.ellipse(wx, 1000 - y, hw, 6, 0, 0, Math.PI * 2);
+        ctx.fillStyle = `rgba(255,${green},0,${(1 - t) * 0.85 * fireAmt})`; ctx.fill();
+      }
+      // tip glow
+      if (fh > 10) {
+        ctx.beginPath(); ctx.arc(fx + Math.sin(animationFrame * 0.14 + ci * 1.6) * 22, 1000 - fh, 18, 0, Math.PI * 2);
+        ctx.fillStyle = `rgba(255,255,120,${0.45 * fireAmt})`; ctx.fill();
+      }
+    });
+
+    // floating embers
+    const nEmbers = Math.floor(90 * fireAmt);
+    for (let i = 0; i < nEmbers; i++) {
+      const spd = 1.2 + (i % 7) * 0.35;
+      const ex = (Math.sin(i * 2.57 + animationFrame * 0.025) * 0.5 + 0.5) * 1000;
+      const ey = 1000 - ((animationFrame * spd + i * 61) % 950);
+      const er = 1 + Math.sin(i * 1.3) * 0.9;
+      const g2 = Math.round(80 + (i % 7) * 25);
+      ctx.beginPath(); ctx.arc(ex, ey, er, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(255,${g2},0,${(0.55 + Math.sin(animationFrame * 0.25 + i) * 0.45) * fireAmt})`; ctx.fill();
+    }
+
+    // smoke wisps at top
+    for (let i = 0; i < Math.floor(12 * fireAmt); i++) {
+      const sx = (Math.sin(i * 3.1 + animationFrame * 0.018) * 0.5 + 0.5) * 1000;
+      const sy = Math.max(0, 1000 - 290 * fireAmt - i * 15 + Math.sin(animationFrame * 0.07 + i) * 20);
+      ctx.beginPath(); ctx.arc(sx, sy, 18 + i * 3, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(30,20,15,${0.18 * fireAmt})`; ctx.fill();
+    }
+
+    // PURGED text during fire peak
+    if (firePeak > 0.35 && fireOut < 0.65) {
+      const ta = Math.min(1, (firePeak - 0.35) / 0.25) * (1 - Math.max(0, (fireOut - 0.2) / 0.45));
+      const sz = Math.round(58 + firePeak * 14 + Math.sin(animationFrame * 0.18) * 3);
+      ctx.textAlign = 'center';
+      ctx.font = `700 ${sz}px DM Mono`;
+      ctx.fillStyle = `rgba(255,230,0,${ta})`; ctx.fillText('⚡ PURGED ⚡', 500, 415);
+      ctx.font = '500 19px DM Mono'; ctx.fillStyle = `rgba(255,130,0,${ta})`;
+      ctx.fillText('The world was consumed by fire.', 500, 462);
+      ctx.textAlign = 'left';
+    }
+
+    // green reclamation growing in
+    if (greenIn > 0) {
+      ctx.fillStyle = `rgba(25,60,25,${Math.min(0.88, greenIn * 0.92)})`; ctx.fillRect(0, 0, 1000, 1000);
+      // spreading growth circles from forest side
+      for (let i = 0; i < 32; i++) {
+        const gx = 980 - greenIn * (90 + i * 26) + Math.sin(i * 1.5) * 20;
+        const gy = (i / 32) * 1000 + Math.sin(i * 2.1 + animationFrame * 0.04) * 18;
+        const gr = greenIn * (70 + Math.sin(i * 1.9) * 28) + Math.sin(animationFrame * 0.07 + i) * 7;
+        ctx.beginPath(); ctx.arc(gx, gy, Math.max(0, gr), 0, Math.PI * 2);
+        ctx.fillStyle = `rgba(45,115,45,${0.22 + greenIn * 0.38})`; ctx.fill();
+      }
+      // leaf sparks
+      for (let i = 0; i < Math.floor(20 * greenIn); i++) {
+        const lx = (Math.sin(i * 2.9 + animationFrame * 0.03) * 0.5 + 0.5) * 1000;
+        const ly = 1000 - ((animationFrame * 0.8 + i * 71) % 900);
+        ctx.beginPath(); ctx.arc(lx, ly, 2, 0, Math.PI * 2);
+        ctx.fillStyle = `rgba(100,200,80,${0.6 * greenIn})`; ctx.fill();
+      }
+      const cov = Math.max(packet.forest_coverage || 0, greenIn * 0.88);
+      ctx.textAlign = 'center';
+      ctx.font = '700 30px DM Mono'; ctx.fillStyle = `rgba(155,189,145,${Math.min(1, greenIn * 2.5)})`;
+      ctx.fillText(`NATURE RECLAIMS — ${Math.round(cov * 100)}%`, 500, 490);
+      if (greenIn > 0.45) {
+        ctx.font = '400 16px DM Mono'; ctx.fillStyle = `rgba(217,242,100,${(greenIn - 0.45) / 0.55})`;
+        ctx.fillText('Reset to begin a new simulation.', 500, 535);
+      }
+      ctx.textAlign = 'left';
+    }
   } else if (packet.game_over) { ctx.fillStyle = 'rgba(30,70,30,0.82)'; ctx.fillRect(0, 0, 1000, 1000); ctx.font = '700 64px DM Mono'; ctx.fillStyle = '#9bbd91'; ctx.textAlign = 'center'; ctx.fillText('NATURE WINS', 500, 420); ctx.font = '500 22px DM Mono'; ctx.fillStyle = '#d9f264'; ctx.fillText('The forest reclaimed the world.', 500, 480); ctx.font = '400 16px DM Mono'; ctx.fillStyle = '#9bbd91'; ctx.fillText('Reset to begin a new simulation.', 500, 520); ctx.textAlign = 'left'; } else if (packet.reclamation_active) { const cov = packet.forest_coverage || 0; ctx.fillStyle = `rgba(30,70,30,${Math.min(0.55, cov * 0.7)})`; ctx.fillRect(0, 0, 1000, 1000); ctx.font = '700 28px DM Mono'; ctx.fillStyle = '#9bbd91'; ctx.textAlign = 'center'; ctx.fillText(`NATURE RECLAIMS — ${Math.round(cov * 100)}%`, 500, 500); ctx.textAlign = 'left'; }
   const simDay = packet.day_number || 1; const dayNames = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun']; const dayName = dayNames[(simDay - 1) % 7];
   const hh = String(Math.floor(liveTimeOfDay)).padStart(2, '0'); const mm = String(Math.floor(liveTimeOfDay % 1 * 60)).padStart(2, '0');
