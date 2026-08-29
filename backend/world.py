@@ -6,7 +6,7 @@ import math
 import random
 
 
-@dataclass(frozen=True)
+@dataclass
 class Zone:
     name: str
     x: float

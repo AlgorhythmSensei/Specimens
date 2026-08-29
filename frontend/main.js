@@ -10,6 +10,8 @@ let currentSimulationNumber = null;
 let packetReceivedAt = performance.now();
 let animationFrame = 0;
 let purgeFrame = 0;
+let editLayoutMode = false;
+let draggingZone = null;
 let hoveredId = null;
 let hoveredDeathMarker = null;
 let selectedId = null;
@@ -110,7 +112,26 @@ function render(packet) {
     ctx.fillStyle = 'rgba(200,140,40,0.06)';
     ctx.fillRect(0, 0, 1000, 1000);
   }
-  packet.zones.forEach(zone => { ctx.fillStyle = colors[zone.name] || '#dce2d5'; ctx.fillRect(zone.x, zone.y, zone.width, zone.height); ctx.strokeStyle = '#788277'; ctx.setLineDash([6, 6]); ctx.strokeRect(zone.x, zone.y, zone.width, zone.height); ctx.setLineDash([]); ctx.fillStyle = '#536057'; ctx.font = '16px DM Mono'; ctx.fillText(zoneTitle(zone.name), zone.x + 12, zone.y + 25); });
+  const DRAGGABLE_ZONES = new Set(['cafe', 'bar', 'work', 'church']);
+  packet.zones.forEach(zone => {
+    const rx = draggingZone?.name === zone.name ? draggingZone.currentX : zone.x;
+    const ry = draggingZone?.name === zone.name ? draggingZone.currentY : zone.y;
+    const isDragging = draggingZone?.name === zone.name;
+    ctx.fillStyle = colors[zone.name] || '#dce2d5';
+    if (isDragging) ctx.globalAlpha = 0.75;
+    ctx.fillRect(rx, ry, zone.width, zone.height);
+    ctx.globalAlpha = 1;
+    ctx.strokeStyle = isDragging ? '#f06b3f' : (editLayoutMode && DRAGGABLE_ZONES.has(zone.name) ? '#f06b3f' : '#788277');
+    ctx.lineWidth = isDragging ? 2.5 : 1;
+    ctx.setLineDash(isDragging ? [8, 4] : [6, 6]);
+    ctx.strokeRect(rx, ry, zone.width, zone.height);
+    ctx.setLineDash([]);
+    ctx.lineWidth = 1;
+    ctx.fillStyle = '#536057';
+    ctx.font = '16px DM Mono';
+    ctx.fillText(zoneTitle(zone.name), rx + 12, ry + 25);
+    if (editLayoutMode && DRAGGABLE_ZONES.has(zone.name) && !isDragging) { ctx.font = '10px DM Mono'; ctx.fillStyle = '#f06b3f'; ctx.fillText('DRAG TO MOVE', rx + 12, ry + zone.height - 10); }
+  });
   (packet.death_markers || []).forEach(marker => { ctx.strokeStyle = '#9c3f54'; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(marker.x - 7, marker.y - 7); ctx.lineTo(marker.x + 7, marker.y + 7); ctx.moveTo(marker.x + 7, marker.y - 7); ctx.lineTo(marker.x - 7, marker.y + 7); ctx.stroke(); });
   (packet.fight_locations || []).forEach(loc => { const pulse = Math.sin(animationFrame / 3) * 6; ctx.beginPath(); ctx.arc(loc.x, loc.y, 26 + pulse, 0, Math.PI * 2); ctx.strokeStyle = 'rgba(232,57,57,0.55)'; ctx.lineWidth = 3; ctx.globalAlpha = 0.5 + Math.sin(animationFrame / 3) * 0.5; ctx.stroke(); ctx.globalAlpha = 1; ctx.font = '700 13px DM Mono'; ctx.fillStyle = 'rgba(232,57,57,0.8)'; ctx.fillText('FIGHT', loc.x - 18, loc.y - 30); });
   packet.plants.forEach(plant => { ctx.strokeStyle = plant.poisonous ? '#9c3f54' : '#3f8f50'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(plant.x, plant.y + 5); ctx.lineTo(plant.x, plant.y - 5); ctx.moveTo(plant.x, plant.y); ctx.quadraticCurveTo(plant.x - 7, plant.y - 7, plant.x - 6, plant.y - 1); ctx.moveTo(plant.x, plant.y - 1); ctx.quadraticCurveTo(plant.x + 7, plant.y - 8, plant.x + 6, plant.y - 2); ctx.stroke(); });
@@ -247,6 +268,15 @@ function updateAgentCards(packet) {
 }
 
 canvas.addEventListener('pointermove', event => {
+  if (draggingZone) {
+    const bounds = canvas.getBoundingClientRect();
+    const mouseX = (event.clientX - bounds.left) * 1000 / bounds.width;
+    const mouseY = (event.clientY - bounds.top) * 1000 / bounds.height;
+    draggingZone.currentX = Math.max(0, Math.min(1000 - draggingZone.width, draggingZone.startZoneX + mouseX - draggingZone.startMouseX));
+    draggingZone.currentY = Math.max(0, Math.min(1000 - draggingZone.height, draggingZone.startZoneY + mouseY - draggingZone.startMouseY));
+    canvas.style.cursor = 'grabbing';
+    return;
+  }
   const hit = specimenAtEvent(event);
   const zone = zoneAtEvent(event);
   const resourceHit = resourceAtEvent(event);
@@ -254,7 +284,8 @@ canvas.addEventListener('pointermove', event => {
   const teleporterHit = teleporterAtEvent(event);
   hoveredId = hit?.specimen.id ?? null;
   hoveredDeathMarker = !hit && deathHit ? deathHit.marker : null;
-  canvas.style.cursor = hit || resourceHit || teleporterHit || hoveredDeathMarker ? 'pointer' : 'default';
+  if (editLayoutMode && zone && new Set(['cafe','bar','work','church']).has(zone.name)) { canvas.style.cursor = 'grab'; }
+  else { canvas.style.cursor = hit || resourceHit || teleporterHit || hoveredDeathMarker ? 'pointer' : (editLayoutMode ? 'default' : 'default'); }
   const hoverCard = document.querySelector('#hover-card');
   const zoneCard = document.querySelector('#zone-card');
   if (hit) { hoverCard.style.left = `${event.offsetX + 16}px`; hoverCard.style.top = `${event.offsetY + 16}px`; }
@@ -266,7 +297,25 @@ canvas.addEventListener('pointermove', event => {
   if (hit || resourceHit || teleporterHit || hoveredDeathMarker || zone) resetHoverTimer();
   else { clearTimeout(hoverTimeout); clearHoverCards(); }
 });
-canvas.addEventListener('pointerleave', clearHoverCards);
+canvas.addEventListener('pointerleave', event => { if (!draggingZone) clearHoverCards(); });
+canvas.addEventListener('pointerdown', event => {
+  if (!editLayoutMode) return;
+  const zone = zoneAtEvent(event);
+  if (!zone || !new Set(['cafe','bar','work','church']).has(zone.name)) return;
+  const bounds = canvas.getBoundingClientRect();
+  const mouseX = (event.clientX - bounds.left) * 1000 / bounds.width;
+  const mouseY = (event.clientY - bounds.top) * 1000 / bounds.height;
+  draggingZone = { name: zone.name, width: zone.width, height: zone.height, startMouseX: mouseX, startMouseY: mouseY, startZoneX: zone.x, startZoneY: zone.y, currentX: zone.x, currentY: zone.y };
+  canvas.setPointerCapture(event.pointerId);
+  canvas.style.cursor = 'grabbing';
+  event.preventDefault();
+});
+canvas.addEventListener('pointerup', event => {
+  if (!draggingZone) return;
+  window.simSocket?.send(JSON.stringify({ type: 'move_zone', name: draggingZone.name, x: draggingZone.currentX, y: draggingZone.currentY }));
+  draggingZone = null;
+  canvas.style.cursor = editLayoutMode ? 'grab' : 'default';
+});
 canvas.addEventListener('click', event => {
   const hit = specimenAtEvent(event);
   if (hit) {
@@ -361,6 +410,12 @@ document.querySelector('#add-form').addEventListener('submit', event => {
   window.simSocket?.send(JSON.stringify({ type: 'add_specimen', values }));
   document.querySelector('#add-dialog').close();
 });
+document.querySelector('#edit-layout-btn').onclick = () => {
+  editLayoutMode = !editLayoutMode;
+  draggingZone = null;
+  document.querySelector('#edit-layout-btn').classList.toggle('active', editLayoutMode);
+  canvas.style.cursor = editLayoutMode ? 'grab' : 'default';
+};
 document.querySelector('#purge-btn').onclick = () => {
   const btn = document.querySelector('#purge-btn');
   btn.disabled = true;

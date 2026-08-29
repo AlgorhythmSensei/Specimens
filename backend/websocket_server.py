@@ -155,6 +155,15 @@ async def websocket_endpoint(websocket: WebSocket):
                 simulation.wake_specimen(int(command.get("id", 0)))
             elif cmd_type == "set_speed":
                 simulation.time_scale = max(0.25, min(10000.0, float(command.get("speed", 1.0))))
+            elif cmd_type == "move_zone":
+                zone_name = command.get("name", "")
+                new_x = float(command.get("x", 0))
+                new_y = float(command.get("y", 0))
+                for zone in simulation.world.zones:
+                    if zone.name == zone_name:
+                        zone.x = max(0.0, min(1000.0 - zone.width, new_x))
+                        zone.y = max(0.0, min(1000.0 - zone.height, new_y))
+                        break
             await websocket.send_text(json.dumps({"type": "command_ack", "running": simulation.running}))
     except WebSocketDisconnect:
         clients.discard(websocket)

@@ -530,12 +530,17 @@ class Simulation:
         deer_list = [r for r in self.world.resources.values() if r.species == "deer" and not r.sleeping]
         if len(deer_list) >= 30:
             return
+        forest = next(zone for zone in self.world.zones if zone.name == "forest")
         for deer in deer_list:
-            nearby = [r for r in self.world.resources.values() if r.id != deer.id and r.species == "deer" and math.dist(r.position, deer.position) < 25]
-            if nearby and random.random() < 0.0004:
+            if deer.mating_ticks_remaining > 0:
+                continue
+            nearby = [r for r in self.world.resources.values() if r.id != deer.id and r.species == "deer" and not r.sleeping and math.dist(r.position, deer.position) < 25]
+            if not nearby:
+                continue
+            chance = 0.006 if deer.energy >= deer.max_energy * 0.6 else 0.002
+            if random.random() < chance:
                 fawn_id = self._next_animal_id()
                 position = (deer.position[0] + random.uniform(-10, 10), deer.position[1] + random.uniform(-10, 10))
-                forest = next(zone for zone in self.world.zones if zone.name == "forest")
                 position = (max(forest.x + 5, min(forest.x + forest.width - 5, position[0])), max(forest.y + 5, min(forest.y + forest.height - 5, position[1])))
                 self.world.resources[fawn_id] = ForestResource(fawn_id, "animal", position, 28, species="deer")
                 deer.current_action = "deer_mating"
