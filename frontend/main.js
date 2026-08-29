@@ -254,7 +254,8 @@ function render(packet) {
   document.querySelector('#deer-count').textContent = packet.deer_count ?? '--';
   document.querySelector('#plant-count').textContent = packet.plant_count ?? '--';
   document.querySelector('#poisonous-count').textContent = packet.poisonous_plant_count ?? '--';
-  document.querySelector('#simulation-label').textContent = `TEST SIMULATION #${packet.simulation_number} · Day ${simDay}`;
+  const scenarioLabel = packet.active_scenario ? ` · ${packet.active_scenario.toUpperCase()}` : '';
+  document.querySelector('#simulation-label').textContent = `TEST SIMULATION #${packet.simulation_number} · Day ${simDay}${scenarioLabel}`;
   const events = document.querySelector('#events'); const notable = packet.specimens.filter(s => ['teleported', 'copulating', 'gave_birth', 'became_father', 'caught_stealing', 'caught_deer', 'fighting', 'being_attacked', 'killed_bear', 'fighting_bear', 'fleeing_to_safety', 'watching_fight', 'sneaking_to_partner', 'with_partner', 'attacked_by_mad_bear'].includes(s.action)).slice(0, 6); events.innerHTML = notable.length ? notable.map(s => `<div class="event"><b>${s.name || '#' + s.id}</b> ${s.action.replace(/_/g,' ')}</div>`).join('') : '<div class="event">Population moving through the field.</div>';
   const analysis = document.querySelector('#analysis-list'); analysis.innerHTML = (packet.behavior_analysis || []).map(item => `<button class="analysis-item" data-specimen-id="${item.id}"><b>${item.name}</b><span>${item.action} · ${item.points} pts</span><p>${item.reason}</p></button>`).join('');
   analysis.querySelectorAll('.analysis-item').forEach(item => item.addEventListener('click', () => { selectedId = Number(item.dataset.specimenId); focusedId = selectedId; document.querySelector('#world').scrollIntoView({ behavior: 'smooth', block: 'center' }); updateAgentCards(packet); }));
