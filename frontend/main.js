@@ -134,7 +134,7 @@ function render(packet) {
     if (specimen.id === selectedId) { ctx.beginPath(); ctx.arc(specimen.x, specimen.y, radius + 19 + Math.sin(animationFrame / 4) * 4, 0, Math.PI * 2); ctx.strokeStyle = '#54a66d'; ctx.globalAlpha = 0.45 + (Math.sin(animationFrame / 4) + 1) * 0.2; ctx.lineWidth = 4; ctx.stroke(); ctx.globalAlpha = 1; }
   });
   if (packet.game_over && purgeFrame > 0) {
-    const p = Math.min(1, (animationFrame - purgeFrame) / 80);
+    const p = Math.min(1, Math.max(0, (animationFrame - purgeFrame) / 80));
     const r = Math.round(180 + 60 * p), g = Math.round(40 * (1 - p)), b = 0;
     ctx.fillStyle = `rgba(${r},${g},${b},${0.4 + p * 0.55})`; ctx.fillRect(0, 0, 1000, 1000);
     for (let i = 0; i < 18 * p; i++) { const bx = Math.sin(animationFrame * 0.07 + i * 1.7) * 480 + 500; const by = Math.cos(animationFrame * 0.05 + i * 2.1) * 480 + 500; const br = 6 + Math.sin(animationFrame * 0.1 + i) * 4; ctx.beginPath(); ctx.arc(bx, by, br, 0, Math.PI * 2); ctx.fillStyle = `rgba(255,${Math.round(100 + 60 * Math.random())},0,${0.6 + Math.random() * 0.4})`; ctx.fill(); }
@@ -362,8 +362,12 @@ document.querySelector('#add-form').addEventListener('submit', event => {
   document.querySelector('#add-dialog').close();
 });
 document.querySelector('#purge-btn').onclick = async () => {
-  purgeFrame = animationFrame + 1;
-  await fetch('/api/purge', { method: 'POST' });
+  const btn = document.querySelector('#purge-btn');
+  btn.disabled = true;
+  btn.textContent = '💥 PURGING…';
+  purgeFrame = animationFrame;
+  try { await fetch('/api/purge', { method: 'POST' }); } catch (_) {}
+  setTimeout(() => { btn.disabled = false; btn.textContent = '☄ PURGE'; }, 3000);
 };
 
 document.querySelector('#field-notes-btn').onclick = async () => {
