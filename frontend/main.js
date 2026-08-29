@@ -361,12 +361,12 @@ document.querySelector('#add-form').addEventListener('submit', event => {
   window.simSocket?.send(JSON.stringify({ type: 'add_specimen', values }));
   document.querySelector('#add-dialog').close();
 });
-document.querySelector('#purge-btn').onclick = async () => {
+document.querySelector('#purge-btn').onclick = () => {
   const btn = document.querySelector('#purge-btn');
   btn.disabled = true;
   btn.textContent = '💥 PURGING…';
   purgeFrame = animationFrame;
-  try { await fetch('/api/purge', { method: 'POST' }); } catch (_) {}
+  window.simSocket?.send('purge');
   setTimeout(() => { btn.disabled = false; btn.textContent = '☄ PURGE'; }, 3000);
 };
 

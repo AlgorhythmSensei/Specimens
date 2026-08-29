@@ -131,6 +131,10 @@ async def websocket_endpoint(websocket: WebSocket):
 
             if message == "toggle":
                 simulation.running = not simulation.running
+            elif message == "purge":
+                simulation.specimens.clear()
+                simulation.game_over = True
+                simulation.reclamation_active = True
             elif message == "reset" or cmd_type == "reset_scenario":
                 scenario = command.get("scenario", "balanced") if cmd_type == "reset_scenario" else "balanced"
                 intensity = int(command.get("intensity", 100)) if cmd_type == "reset_scenario" else 100
