@@ -87,6 +87,12 @@ class BehaviorEngine:
         if simulation.weather == "drought":
             utilities["eat"] += 25
             utilities["gather"] += 20
+        
+        # Log top 3 actions for debugging (optional)
+        if hasattr(simulation, "_debug_utilities") and simulation._debug_utilities:
+            sorted_actions = sorted(utilities.items(), key=lambda x: x[1], reverse=True)[:3]
+            print(f"[{specimen.name}#{specimen.id}] Top actions: {', '.join(f'{a}={u:.1f}' for a, u in sorted_actions)}")
+        
         return max(utilities, key=utilities.get)
 
     def execute(self, specimen: "Specimen", action: str, simulation: "Simulation") -> None:
