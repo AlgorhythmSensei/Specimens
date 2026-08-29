@@ -315,7 +315,7 @@ canvas.addEventListener('pointerdown', event => {
 });
 canvas.addEventListener('pointerup', event => {
   if (!draggingZone) return;
-  window.simSocket?.send(JSON.stringify({ type: 'move_zone', name: draggingZone.name, x: draggingZone.currentX, y: draggingZone.currentY }));
+  safeSend(JSON.stringify({ type: 'move_zone', name: draggingZone.name, x: draggingZone.currentX, y: draggingZone.currentY }));
   draggingZone = null;
   canvas.style.cursor = editLayoutMode ? 'grab' : 'default';
 });
@@ -323,7 +323,7 @@ canvas.addEventListener('click', event => {
   const hit = specimenAtEvent(event);
   if (hit) {
     selectedId = hit.specimen.id; selectedAnimalId = null; focusedId = selectedId;
-    if (hit.specimen.sleeping) window.simSocket?.send(JSON.stringify({ type: 'wake_specimen', id: hit.specimen.id }));
+    if (hit.specimen.sleeping) safeSend(JSON.stringify({ type: 'wake_specimen', id: hit.specimen.id }));
   } else {
     const resourceHit = resourceAtEvent(event);
     if (resourceHit && resourceHit.resource.kind === 'animal') { selectedAnimalId = resourceHit.resource.id; selectedId = null; focusedId = null; }
@@ -337,7 +337,7 @@ function animate() { animationFrame += 1; if (previousPacket) render(interpolate
 
 function connect() { const protocol = location.protocol === 'https:' ? 'wss' : 'ws'; const socket = new WebSocket(`${protocol}://${location.host}/ws`); socket.onopen = () => { connection.textContent = 'LIVE'; document.querySelector('.status').classList.add('connected'); }; socket.onmessage = event => { const packet = JSON.parse(event.data); if (packet.specimens) draw(packet); }; socket.onclose = () => { connection.textContent = 'RECONNECTING'; document.querySelector('.status').classList.remove('connected'); setTimeout(connect, 1200); }; window.simSocket = socket; }
 document.querySelector('#pause').onclick = event => {
-  window.simSocket?.send('toggle');
+  safeSend('toggle');
   state.running = !state.running;
   event.currentTarget.textContent = state.running ? 'Pause simulation' : 'Resume simulation';
   const dot = document.querySelector('#connection-dot');
@@ -355,9 +355,18 @@ document.querySelector('#pause').onclick = event => {
 };
 // ── Reset / Scenario dialog ──────────────────────────────────────────────────
 let selectedScenario = 'balanced';
+function safeSend(msg) {
+  try {
+    if (window.simSocket && window.simSocket.readyState === WebSocket.OPEN) {
+      window.simSocket.send(msg);
+    }
+  } catch (_) {}
+}
+
 const resetDialog = document.querySelector('#reset-dialog');
 
 document.querySelector('#reset').onclick = async () => {
+  if (resetDialog.open) resetDialog.close();
   const cardsEl = document.querySelector('#scenario-cards');
   cardsEl.innerHTML = '<div style="font:11px DM Mono,monospace;color:var(--muted)">Loading scenarios…</div>';
   resetDialog.showModal();
@@ -381,13 +390,14 @@ document.querySelector('#reset').onclick = async () => {
     cardsEl.innerHTML = `<p style="color:var(--orange)">${e.message}</p>`;
   }
 };
+resetDialog.addEventListener('click', e => { if (e.target === resetDialog) resetDialog.close(); });
 document.querySelector('#close-reset').onclick = () => resetDialog.close();
 document.querySelector('#intensity-slider').oninput = e => {
   document.querySelector('#intensity-value').value = e.target.value;
 };
 document.querySelector('#launch-scenario').onclick = () => {
   const intensity = Number(document.querySelector('#intensity-slider').value);
-  window.simSocket?.send(JSON.stringify({ type: 'reset_scenario', scenario: selectedScenario, intensity }));
+  safeSend(JSON.stringify({ type: 'reset_scenario', scenario: selectedScenario, intensity }));
   state.running = true;
   document.querySelector('#pause').textContent = 'Pause simulation';
   document.querySelector('#connection-dot').style.background = '';
@@ -400,7 +410,7 @@ const speedDisplay = document.querySelector('#speed-display');
 speedSlider.addEventListener('input', () => {
   const speed = parseInt(speedSlider.value, 10);
   speedDisplay.textContent = `${speed}×`;
-  window.simSocket?.send(JSON.stringify({ type: 'set_speed', speed }));
+  safeSend(JSON.stringify({ type: 'set_speed', speed }));
 });
 document.querySelector('#open-add').onclick = () => document.querySelector('#add-dialog').showModal();
 document.querySelector('#close-add').onclick = () => document.querySelector('#add-dialog').close();
@@ -410,7 +420,7 @@ document.querySelector('#add-form').addEventListener('submit', event => {
   const values = Object.fromEntries(new FormData(event.currentTarget));
   values.gender = document.querySelector('#gender').value;
   values.housed = document.querySelector('#housed').value === 'true';
-  window.simSocket?.send(JSON.stringify({ type: 'add_specimen', values }));
+  safeSend(JSON.stringify({ type: 'add_specimen', values }));
   document.querySelector('#add-dialog').close();
 });
 document.querySelector('#edit-layout-btn').onclick = () => {
@@ -424,7 +434,7 @@ document.querySelector('#purge-btn').onclick = () => {
   btn.disabled = true;
   btn.textContent = '💥 PURGING…';
   purgeFrame = animationFrame;
-  window.simSocket?.send('purge');
+  safeSend('purge');
   setTimeout(() => { btn.disabled = false; btn.textContent = '☄ PURGE'; }, 3000);
 };
 
