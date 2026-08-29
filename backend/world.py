@@ -41,6 +41,7 @@ class ForestResource:
         self.circle_center: tuple = (0.0, 0.0)
         self.circle_angle: float = 0.0
         self.current_action: str = ""
+        self.mating_ticks_remaining: int = 0
         if kind == "animal":
             if species == "bear":
                 self.max_age_hours = random.uniform(72, 180)
@@ -53,7 +54,7 @@ class ForestResource:
         self.velocity = (random.uniform(0.7, 1.3) * speed * math.cos(angle), random.uniform(0.7, 1.3) * speed * math.sin(angle))
 
     def to_packet(self) -> dict:
-        return {"id": self.id, "kind": self.kind, "species": self.species, "x": round(self.position[0], 1), "y": round(self.position[1], 1), "energy": round(self.energy, 1), "poisonous": self.poisonous, "sleeping": self.sleeping, "mad": self.mad_remaining_hours > 0, "new_arrival": self.age_hours < 1, "mating": self.current_action == "deer_mating"}
+        return {"id": self.id, "kind": self.kind, "species": self.species, "x": round(self.position[0], 1), "y": round(self.position[1], 1), "energy": round(self.energy, 1), "poisonous": self.poisonous, "sleeping": self.sleeping, "mad": self.mad_remaining_hours > 0, "new_arrival": self.age_hours < 1, "mating": self.mating_ticks_remaining > 0}
 
 
 class World:

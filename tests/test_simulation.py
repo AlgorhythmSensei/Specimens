@@ -271,6 +271,7 @@ def test_deer_eat_plants_but_die_from_poisonous_plants():
     deer = next(resource for resource in simulation.world.resources.values() if resource.species == "deer")
     plant = next(resource for resource in simulation.world.resources.values() if resource.kind == "plant")
     deer.position = plant.position
+    deer.energy = deer.max_energy * 0.5  # below 80% threshold so deer will eat
     plant.poisonous = True
     # 5% chance per call — loop until the deer eats the plant
     for _ in range(200):
@@ -336,3 +337,44 @@ def test_balanced_scenario_is_unchanged_from_default():
     packet = sim.packet()
     assert packet["active_scenario"] == "balanced"
     assert len(packet["specimens"]) == 42
+
+
+def test_relationship_decay_applies_per_tick():
+    """Verify that relationships decay slowly based on forgetfulness trait."""
+    sim = Simulation()
+    a = sim.specimens[1]
+    b = sim.specimens[2]
+    a.personality.forgetfulness = 100  # High forgetfulness
+    a.adjust_relationship(b.id, 50)  # Strong positive relationship
+    initial = a.relationship_with(b.id)
+    
+    # Run 1000 ticks (100 real seconds)
+    for _ in range(1000):
+        sim.step(0.1)
+    
+    final = a.relationship_with(b.id)
+    assert final < initial, f"expected relationship to decay from {initial} to < {final}"
+    assert 48 < final < 50, f"expected minimal decay over 100 sec, got {final}"
+
+
+def test_death_markers_are_pruned_after_100_ticks():
+    """Verify old death markers are removed to prevent memory buildup."""
+    sim = Simulation()
+    # Create a death marker
+    sim._record_death((500, 500), "Test", "human", "starvation")
+    assert len(sim.death_markers) == 1
+    
+    # Advance 101 ticks
+    for _ in range(101):
+        sim.step(0.1)
+    
+    # Old marker should be gone
+    # Verify old marker is gone
+    # Trigger another death to prune old markers
+    sim._record_death((600, 600), "Test2", "human", "starvation")
+    # Now the old marker should be gone after pruning
+    old_marker = [m for m in sim.death_markers if m.get("name") == "Test"]
+    assert len(old_marker) == 0, f"old death marker should be pruned, but found {old_marker}"
+    # Verify new marker exists
+    new_marker = [m for m in sim.death_markers if m.get("name") == "Test2"]
+    assert len(new_marker) == 1, "new death marker should remain"

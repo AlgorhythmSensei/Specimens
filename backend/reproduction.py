@@ -43,6 +43,8 @@ def attempt_copulation(woman: Specimen, specimens: dict) -> bool:
         woman.partner_id = man.id
         woman.current_action = "copulating"
         man.current_action = "copulating"
+        woman.mating_ticks_remaining = 15
+        man.mating_ticks_remaining = 15
         woman.adjust_relationship(man.id, 8.0)
         man.adjust_relationship(woman.id, 8.0)
         return True

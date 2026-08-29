@@ -160,6 +160,17 @@ class Simulation:
         self._resolve_bear_behavior(seconds)
         self._replenish_wildlife()
         self.teleporter.update(seconds)
+        # Apply relationship decay based on forgetfulness
+        for specimen in self.specimens.values():
+            decay_rate = specimen.personality.forgetfulness / 100000.0  # ~1 point per day for max forgetfulness
+            for other_id in list(specimen.relationships.keys()):
+                current = specimen.relationships[other_id]
+                # Decay toward neutral (0) slowly
+                if current > 0:
+                    specimen.relationships[other_id] = max(0.0, current - decay_rate)
+                elif current < 0:
+                    specimen.relationships[other_id] = min(0.0, current + decay_rate)
+        
         births = []
         for specimen in list(self.specimens.values()):
             specimen.age_hours += seconds / 25
@@ -191,6 +202,8 @@ class Simulation:
                 specimen.run_remaining_hours = min(1.0, specimen.run_remaining_hours + seconds / 25 * 0.25)
             if specimen.intoxicated_hours_remaining > 0:
                 specimen.intoxicated_hours_remaining = max(0.0, specimen.intoxicated_hours_remaining - seconds / 25)
+            if specimen.mating_ticks_remaining > 0:
+                specimen.mating_ticks_remaining -= 1
             action = "sleep" if specimen.sleeping else self.behavior.choose(specimen, self)
             self.behavior.execute(specimen, action, self)
             if action == "work" and self.world.zone_at(specimen.position) == "work":
@@ -248,6 +261,8 @@ class Simulation:
 
     def _record_death(self, position, name: str, entity_type: str, cause: str, action: str = "unknown") -> None:
         self.death_markers.append({"x": round(position[0], 1), "y": round(position[1], 1), "name": name, "entity_type": entity_type, "cause": cause, "action": action, "tick": self.tick})
+        # Keep only recent death markers (last 100 ticks = 10 real seconds)
+        self.death_markers = [m for m in self.death_markers if self.tick - m.get("tick", self.tick) <= 100]
         self.death_markers = self.death_markers[-100:]
 
     def _action_points(self, specimen: Specimen, action: str) -> int:
@@ -524,6 +539,8 @@ class Simulation:
                 position = (max(forest.x + 5, min(forest.x + forest.width - 5, position[0])), max(forest.y + 5, min(forest.y + forest.height - 5, position[1])))
                 self.world.resources[fawn_id] = ForestResource(fawn_id, "animal", position, 28, species="deer")
                 deer.current_action = "deer_mating"
+                deer.mating_ticks_remaining = 15
+                nearby[0].mating_ticks_remaining = 15
 
     def _next_animal_id(self) -> int:
         next_id = max(self.world.resources.keys(), default=0) + 1
@@ -534,6 +551,8 @@ class Simulation:
         bears = [r for r in self.world.resources.values() if r.species == "bear" and not r.sleeping]
         all_deer = [r for r in self.world.resources.values() if r.species == "deer"]
         for deer in [r for r in all_deer if not r.sleeping]:
+            if deer.mating_ticks_remaining > 0:
+                deer.mating_ticks_remaining -= 1
             drought_multiplier = 1.5 if self.weather == "drought" else 1.0
             deer.energy = max(0, deer.energy - 0.002 * drought_multiplier)
             if deer.energy <= 0:
@@ -590,6 +609,8 @@ class Simulation:
     def _resolve_deer_feeding(self) -> None:
         deer = [resource for resource in self.world.resources.values() if resource.species == "deer" and not resource.sleeping]
         for herbivore in deer:
+            if herbivore.energy >= herbivore.max_energy * 0.8:
+                continue
             plants = [resource for resource in self.world.resources.values() if resource.kind == "plant" and resource.energy > 0 and math.dist(resource.position, herbivore.position) < 18]
             if not plants:
                 continue
